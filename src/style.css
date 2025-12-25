@@ -1,0 +1,275 @@
+:root {
+  font-family: "Helvetica Neue", "Segoe UI", system-ui, -apple-system, sans-serif;
+  background-color: #f5f7fb;
+  color: #111827;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #f5f7fb;
+}
+
+#app {
+  min-height: 100vh;
+}
+
+.page {
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+}
+
+.top-icon {
+  font-size: 18px;
+}
+
+.top-title {
+  flex: 1;
+  font-size: 16px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.icon-button {
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  color: #1f2937;
+}
+
+.hero {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0 16px;
+}
+
+.hero-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: #e8f0ff;
+  color: #1d4ed8;
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+}
+
+.hero-title {
+  margin: 0;
+  font-size: 26px;
+  font-weight: 800;
+  color: #111827;
+}
+
+.search-section {
+  margin-bottom: 16px;
+}
+
+.search-box {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
+}
+
+.search-icon {
+  font-size: 18px;
+  color: #9ca3af;
+}
+
+.search-input {
+  border: none;
+  outline: none;
+  flex: 1;
+  font-size: 16px;
+  color: #111827;
+}
+
+.search-input::placeholder {
+  color: #9ca3af;
+}
+
+.search-input:disabled {
+  background: transparent;
+}
+
+.empty-card {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  padding: 32px 20px;
+  text-align: center;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  margin-bottom: 18px;
+}
+
+.empty-icon {
+  font-size: 34px;
+  color: #d1d5db;
+  margin-bottom: 12px;
+}
+
+.empty-title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 6px;
+}
+
+.empty-text {
+  font-size: 15px;
+  color: #6b7280;
+}
+
+.watchlist {
+  background: #ffffff;
+  border-radius: 16px;
+  border: 1px solid #e5e7eb;
+  padding: 16px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.section-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 800;
+  color: #111827;
+}
+
+.watchlist-empty {
+  text-align: center;
+  padding: 20px 8px;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.card-grid.single {
+  grid-template-columns: 1fr;
+}
+
+.search-result {
+  margin-bottom: 16px;
+}
+
+.stock-card {
+  background: #ffffff;
+  border-radius: 14px;
+  border: 1px solid #e5e7eb;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 12px 20px rgba(15, 23, 42, 0.06);
+}
+
+.stock-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.symbol {
+  font-size: 17px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.name {
+  font-size: 12px;
+  color: #6b7280;
+  max-width: 55%;
+  text-align: right;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+
+.star-btn {
+  margin-left: auto;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 18px;
+  color: #cbd5e1;
+}
+
+.star-btn.active {
+  color: #f59e0b;
+}
+
+.stock-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.price-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.price {
+  font-size: 22px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.change-row {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  align-items: center;
+}
+
+.change-chip {
+  padding: 4px 8px;
+  border-radius: 10px;
+  background: #f3f4f6;
+}
+
+.change.up {
+  color: #16a34a;
+}
+
+.change.down {
+  color: #dc2626;
+}
+
+.status-text {
+  text-align: center;
+  margin-top: 12px;
+  color: #6b7280;
+  font-size: 13px;
+}
