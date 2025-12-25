@@ -120,7 +120,7 @@ Render / GitHub / Vite 等工具链细节补全
 
 🔗 在线地址
 
-前端：👉 （你的 Static Site URL）
+前端：👉 https://stock-board-web.onrender.com/
 
 后端 API：👉 https://stock-board-api.onrender.com/
 
