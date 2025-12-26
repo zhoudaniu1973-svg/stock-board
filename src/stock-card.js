@@ -1,32 +1,48 @@
 // src/stock-card.js
 export async function fetchStock(symbol) {
-  // èµ°ä½ æœ¬åœ°çš?Node ä»£ç†ï¼Œè€Œä¸æ˜¯ç›´æŽ¥è¯·æ±?yahoo
   const base = import.meta.env.VITE_API_BASE || "http://localhost:3000";
   const url = `${base}/stock/${symbol}`;
 
   try {
     const res = await fetch(url);
+    const contentType = (res.headers.get("content-type") || "").toLowerCase();
+    const text = await res.text();
+
     if (!res.ok) {
-      throw new Error(`HTTP ${res.status}`);
+      try {
+        const errJson = JSON.parse(text || "{}");
+        const detail = errJson.detail || errJson.error || text;
+        throw new Error(detail ? `HTTP ${res.status}: ${detail}` : `HTTP ${res.status}`);
+      } catch (_parseErr) {
+        throw new Error(text ? `HTTP ${res.status}: ${text}` : `HTTP ${res.status}`);
+      }
     }
 
-    const json = await res.json();
-    const meta = json.chart.result[0].meta;
+    if (!contentType.includes("application/json")) {
+      throw new Error("Upstream returned non-JSON");
+    }
 
-    const price = meta.regularMarketPrice;
-    const prev = meta.previousClose;
-    const change = price - prev;
-    const changePercent = (change / prev) * 100;
+    let data;
+    try {
+      data = JSON.parse(text);
+    } catch (_parseErr) {
+      throw new Error("Failed to parse upstream JSON");
+    }
+
+    const price = Number(data.price);
+    const change = Number(data.change);
+    const percent = Number(data.percent);
+    const prevClose = isFinite(price) && isFinite(change) ? price - change : null;
 
     return {
       symbol,
       price,
-      prevClose: prev,
+      prevClose,
       change,
-      changePercent,
+      changePercent: percent,
     };
   } catch (e) {
-    console.error("Yahoo error", symbol, e);
-    return null;
+    console.error("Fetch stock error", symbol, e);
+    return { error: e.message || "Fetch failed" };
   }
 }

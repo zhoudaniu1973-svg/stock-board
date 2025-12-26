@@ -116,28 +116,42 @@ function updateDebugPanel(report) {
 function renderStockCards(stocks) {
   return stocks
     .map((s) => {
-      const up = s.change >= 0;
-      const changeClass = up ? "change up" : "change down";
-      const arrow = up ? "▲" : "▼";
+      const hasError = Boolean(s.error);
+      const up = !hasError && s.change >= 0;
+      const changeClass = hasError ? "change" : up ? "change up" : "change down";
+      const arrow = hasError ? "--" : up ? "▲" : "▼";
       const starred = isInWatchlist(s.symbol);
+      const priceValue = Number.isFinite(s.price) ? s.price : 0;
+      const changeValue = Number.isFinite(s.change) ? s.change : 0;
+      const percentValue = Number.isFinite(s.percent) ? s.percent : 0;
+      const displayName = s.name || s.symbol;
+      const errorText = hasError ? s.error : "";
 
       return `
         <div class="stock-card">
           <div class="stock-header">
             <span class="symbol">${s.symbol}</span>
-            <span class="name">${s.name}</span>
+            <span class="name">${displayName}</span>
             <button class="star-btn ${starred ? "active" : ""}" data-symbol="${s.symbol}" data-name="${s.name}" aria-label="收藏">
               ${starred ? "★" : "☆"}
             </button>
           </div>
           <div class="stock-body">
-            <div class="price-row">
-              <span class="price">$${s.price.toFixed(2)}</span>
-            </div>
-            <div class="change-row ${changeClass}">
-              <span class="change-chip">${arrow} ${s.change.toFixed(2)}</span>
-              <span>${s.percent.toFixed(2)}%</span>
-            </div>
+            ${
+              hasError
+                ? `<div class="price-row"><span class="price">${errorText}</span></div>
+                   <div class="change-row ${changeClass}">
+                     <span class="change-chip">--</span>
+                     <span>--</span>
+                   </div>`
+                : `<div class="price-row">
+                     <span class="price">$${priceValue.toFixed(2)}</span>
+                   </div>
+                   <div class="change-row ${changeClass}">
+                     <span class="change-chip">${arrow} ${changeValue.toFixed(2)}</span>
+                     <span>${percentValue.toFixed(2)}%</span>
+                   </div>`
+            }
           </div>
         </div>
       `;
@@ -204,10 +218,10 @@ function renderLayout() {
   app.innerHTML = `
     <div class="page">
       <header class="top-bar">
-        <div class="top-icon">☑</div>
+        <div class="top-icon">☼</div>
         <div class="top-title">股票数据可视化工具</div>
         <button class="icon-button" data-action="refresh" aria-label="刷新">
-          ⟳
+          ↻
         </button>
       </header>
 
@@ -222,7 +236,7 @@ function renderLayout() {
           <input
             type="text"
             class="search-input"
-            placeholder="搜索股票代码或公司名称..."
+            placeholder="搜索股票代码或公司名..."
             aria-label="搜索股票"
             value="${state.query}"
           />
@@ -299,23 +313,54 @@ async function refreshData(options = {}) {
   renderLayout();
 
   const updatedQuotes = { ...state.quotesBySymbol };
-  for (const sym of state.watchlist) {
-    const data = await fetchStock(sym);
-    if (data) {
-      const meta = findStockMeta(sym);
-      updatedQuotes[sym] = {
-        symbol: sym,
-        name: meta.name || sym,
-        price: data.price,
-        change: data.change,
-        percent: data.changePercent,
-      };
-    }
-  }
 
-  state.quotesBySymbol = updatedQuotes;
-  state.ui = { loading: false, message: null };
-  renderLayout();
+  try {
+    const tasks = state.watchlist.map(async (sym) => {
+      const meta = findStockMeta(sym);
+      const result = await fetchStock(sym);
+      return { sym, meta, result };
+    });
+
+    const settled = await Promise.allSettled(tasks);
+    for (const entry of settled) {
+      if (entry.status === "fulfilled") {
+        const { sym, meta, result } = entry.value;
+        if (result && !result.error) {
+          updatedQuotes[sym] = {
+            symbol: sym,
+            name: meta.name || sym,
+            price: result.price,
+            change: result.change,
+            percent: result.changePercent,
+          };
+        } else {
+          updatedQuotes[sym] = {
+            symbol: sym,
+            name: meta.name || sym,
+            price: 0,
+            change: 0,
+            percent: 0,
+            error: (result && result.error) || "获取失败",
+          };
+        }
+      } else {
+        const sym = entry.reason && entry.reason.sym ? entry.reason.sym : "未知";
+        const meta = findStockMeta(sym);
+        updatedQuotes[sym] = {
+          symbol: sym,
+          name: meta.name || sym,
+          price: 0,
+          change: 0,
+          percent: 0,
+          error: "获取失败",
+        };
+      }
+    }
+  } finally {
+    state.quotesBySymbol = updatedQuotes;
+    state.ui = { loading: false, message: null };
+    renderLayout();
+  }
 }
 
 async function handleSearch(rawInput) {
@@ -323,6 +368,7 @@ async function handleSearch(rawInput) {
   state.query = value;
 
   let report = buildSearchDebugReport(value, STOCK_LIST);
+  let statusMessage = null;
 
   if (!value) {
     state.searchResult = null;
@@ -337,48 +383,50 @@ async function handleSearch(rawInput) {
   updateDebugPanel(report);
   renderLayout();
 
-  const meta = findStockMeta(value);
-  const data = await fetchStock(meta.symbol);
+  try {
+    const meta = findStockMeta(value);
+    const result = await fetchStock(meta.symbol);
+    const matched = report.checks.find((c) => c.matchSymbol || c.matchName);
 
-  const matched = report.checks.find((c) => c.matchSymbol || c.matchName);
-
-  if (data) {
-    const quote = {
-      symbol: meta.symbol.toUpperCase(),
-      name: meta.name,
-      price: data.price,
-      change: data.change,
-      percent: data.changePercent,
-    };
-    state.searchResult = quote;
-    state.quotesBySymbol[quote.symbol] = quote;
-    state.ui = { loading: false, message: null };
-
-    if (!matched) {
-      report.result = { type: "api_fallback", symbol: meta.symbol.toUpperCase(), name: meta.name };
-    }
-  } else {
-    if (matched) {
-      const fallbackQuote = {
-        symbol: matched.symbol.toUpperCase(),
-        name: matched.name,
-        price: 0,
-        change: 0,
-        percent: 0,
+    if (result && !result.error) {
+      const quote = {
+        symbol: meta.symbol.toUpperCase(),
+        name: meta.name,
+        price: result.price,
+        change: result.change,
+        percent: result.changePercent,
       };
-      state.searchResult = fallbackQuote;
-      state.quotesBySymbol[fallbackQuote.symbol] = fallbackQuote;
-      state.ui = { loading: false, message: "数据获取失败，使用占位数据" };
-      report.result = { type: "meta_match", symbol: matched.symbol, name: matched.name };
+      state.searchResult = quote;
+      state.quotesBySymbol[quote.symbol] = quote;
+      report.result = matched
+        ? { type: "meta_match", symbol: matched.symbol, name: matched.name }
+        : { type: "api_fallback", symbol: meta.symbol.toUpperCase(), name: meta.name };
+      statusMessage = null;
     } else {
-      state.searchResult = null;
-      state.ui = { loading: false, message: null };
-      report.result = { type: "not_found" };
+      const errorText = (result && result.error) || "获取失败";
+      if (matched) {
+        const fallbackQuote = {
+          symbol: matched.symbol.toUpperCase(),
+          name: matched.name,
+          price: 0,
+          change: 0,
+          percent: 0,
+          error: errorText,
+        };
+        state.searchResult = fallbackQuote;
+        state.quotesBySymbol[fallbackQuote.symbol] = fallbackQuote;
+        report.result = { type: "meta_match", symbol: matched.symbol, name: matched.name };
+      } else {
+        state.searchResult = null;
+        report.result = { type: "not_found" };
+      }
+      statusMessage = errorText;
     }
+  } finally {
+    state.ui = { loading: false, message: statusMessage };
+    updateDebugPanel(report);
+    renderLayout();
   }
-
-  updateDebugPanel(report);
-  renderLayout();
 }
 
 // 初始加载
