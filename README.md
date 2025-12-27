@@ -137,4 +137,5 @@ Render / GitHub / Vite 等工具链细节补全
 📄 License
 
 MIT
-
+本项目曾尝试基于 Yahoo Finance 抓取行情，过程中验证了并发去重、缓存、限流、stale 回退等工程模式；
+实际生产环境建议使用付费行情 API。”
