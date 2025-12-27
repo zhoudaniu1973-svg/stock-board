@@ -10,6 +10,7 @@ const STOCK_LIST = [
 
 const WATCHLIST_KEY = "stock-board:watchlist";
 let eventsBound = false;
+let searchDebounceTimer = null;
 
 const state = {
   query: "",
@@ -19,6 +20,11 @@ const state = {
   ui: { loading: false, message: null }, // UI status
 };
 
+function isAShareSymbol(symbol) {
+  const s = (symbol || "").toUpperCase();
+  return /^\d{6}$/.test(s) || /\.SS$/.test(s) || /\.SZ$/.test(s) || /^SH/.test(s) || /^SZ/.test(s);
+}
+
 function loadWatchlist() {
   try {
     const raw = localStorage.getItem(WATCHLIST_KEY);
@@ -27,7 +33,7 @@ function loadWatchlist() {
     if (!Array.isArray(parsed)) return [];
     return parsed
       .map((s) => (typeof s === "string" ? s.toUpperCase() : null))
-      .filter(Boolean);
+      .filter((s) => s && !isAShareSymbol(s)); // 过滤 A 股，不再请求
   } catch (err) {
     console.warn("Failed to load watchlist", err);
     return [];
@@ -48,6 +54,8 @@ function isInWatchlist(symbol) {
 
 function upsertWatchlist(symbol, quote) {
   const sym = symbol.toUpperCase();
+  // 禁止 A 股加入自选
+  if (isAShareSymbol(sym)) return;
   if (!isInWatchlist(sym)) {
     state.watchlist.push(sym);
     saveWatchlist();
@@ -196,9 +204,9 @@ function renderLayout() {
   const initialEmptyCard = showInitialEmpty
     ? `
       <div class="empty-card">
-        <div class="empty-icon">↗</div>
+        <div class="empty-icon">⬇</div>
         <div class="empty-title">搜索股票开始</div>
-        <div class="empty-text">在上方搜索框输入股票代码或公司名称</div>
+        <div class="empty-text">在上方搜索框输入股票代码或公司名</div>
       </div>
     `
     : "";
@@ -218,7 +226,7 @@ function renderLayout() {
   app.innerHTML = `
     <div class="page">
       <header class="top-bar">
-        <div class="top-icon">☼</div>
+        <div class="top-icon">★</div>
         <div class="top-title">股票数据可视化工具</div>
         <button class="icon-button" data-action="refresh" aria-label="刷新">
           ↻
@@ -226,7 +234,7 @@ function renderLayout() {
       </header>
 
       <section class="hero">
-        <div class="hero-icon">↗</div>
+        <div class="hero-icon">⬇</div>
         <h1 class="hero-title">股票数据可视化</h1>
       </section>
 
@@ -305,6 +313,17 @@ function bindEventsOnce() {
     }
   });
 
+  const searchInput = app.querySelector(".search-input");
+  if (searchInput) {
+    searchInput.addEventListener("input", (e) => {
+      const value = e.target.value;
+      if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
+      searchDebounceTimer = setTimeout(() => {
+        handleSearch(value);
+      }, 400); // debounce 400ms
+    });
+  }
+
   eventsBound = true;
 }
 
@@ -315,11 +334,13 @@ async function refreshData(options = {}) {
   const updatedQuotes = { ...state.quotesBySymbol };
 
   try {
-    const tasks = state.watchlist.map(async (sym) => {
-      const meta = findStockMeta(sym);
-      const result = await fetchStock(sym);
-      return { sym, meta, result };
-    });
+    const tasks = state.watchlist
+      .filter((sym) => !isAShareSymbol(sym)) // 不请求 A 股
+      .map(async (sym) => {
+        const meta = findStockMeta(sym);
+        const result = await fetchStock(sym);
+        return { sym, meta, result };
+      });
 
     const settled = await Promise.allSettled(tasks);
     for (const entry of settled) {
@@ -384,6 +405,11 @@ async function handleSearch(rawInput) {
   renderLayout();
 
   try {
+    if (isAShareSymbol(value)) {
+      statusMessage = "仅支持美股/指数";
+      state.searchResult = null;
+      return;
+    }
     const meta = findStockMeta(value);
     const result = await fetchStock(meta.symbol);
     const matched = report.checks.find((c) => c.matchSymbol || c.matchName);
@@ -429,5 +455,5 @@ async function handleSearch(rawInput) {
   }
 }
 
-// 初始加载
+// 初始加载（无自动轮询，仅手动/点击刷新）
 refreshData({ silent: true });

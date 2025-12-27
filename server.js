@@ -28,6 +28,9 @@ const normalizeSymbol = (raw = "") => {
   return raw.trim().toUpperCase();
 };
 
+const isAShareSymbol = (symbol) =>
+  /^\d{6}$/.test(symbol) || /\.SS$/.test(symbol) || /\.SZ$/.test(symbol) || /^SH/.test(symbol) || /^SZ/.test(symbol);
+
 const isFresh = (entry, now) => entry && now - entry.ts < CACHE_TTL_MS;
 
 const getFreshFromCache = (symbol, now) => {
@@ -113,6 +116,15 @@ const respondError = (res, status, message, detail) => {
   });
 };
 
+const isUpstream429 = (err) => {
+  const msg = (err && err.message) || "";
+  return (
+    err?.statusCode === 429 ||
+    msg.includes("Failed to get crumb") ||
+    msg.includes("Too Many Requests")
+  );
+};
+
 // Health check
 app.get("/ping", (req, res) => {
   res.json({ ok: true });
@@ -123,6 +135,9 @@ app.get("/stock/:symbol", async (req, res) => {
   const symbol = normalizeSymbol(req.params.symbol || "");
   if (!symbol) {
     return res.status(400).json({ error: "Symbol is required" });
+  }
+  if (isAShareSymbol(symbol)) {
+    return res.status(400).json({ error: "A_SHARE_DISABLED" });
   }
 
   const now = Date.now();
@@ -137,6 +152,13 @@ app.get("/stock/:symbol", async (req, res) => {
       const payload = await inFlight.get(symbol);
       return res.json(payload);
     } catch (err) {
+      const stalePayload = getAnyCache(symbol);
+      if (isUpstream429(err)) {
+        if (stalePayload) {
+          return res.json({ ...stalePayload, stale: true, upstream429: true });
+        }
+        return respondError(res, 429, "Upstream rate limited", err.message);
+      }
       const status = err.httpStatus || err.statusCode || 502;
       return respondError(res, status, "Upstream error", err.message);
     }
@@ -160,6 +182,13 @@ app.get("/stock/:symbol", async (req, res) => {
     const payload = await promise;
     return res.json(payload);
   } catch (err) {
+    const stalePayload = getAnyCache(symbol);
+    if (isUpstream429(err)) {
+      if (stalePayload) {
+        return res.json({ ...stalePayload, stale: true, upstream429: true });
+      }
+      return respondError(res, 429, "Upstream rate limited", err.message);
+    }
     const statusCode =
       err.httpStatus ||
       err.statusCode ||
