@@ -1,6 +1,8 @@
+require("dotenv").config();
+const FMP_API_KEY = process.env.FMP_API_KEY;
+
 const express = require("express");
 const cors = require("cors");
-const yahooFinance = require("yahoo-finance2").default;
 
 const app = express();
 app.use(cors());
@@ -15,6 +17,7 @@ const CACHE_TTL_MS = parseEnvInt("CACHE_TTL_MS", 60 * 1000); // TTL for cache fr
 const CACHE_CAPACITY = parseEnvInt("CACHE_CAPACITY", 200); // Max symbols to keep before LRU eviction
 const RATE_LIMIT_WINDOW_MS = parseEnvInt("RATE_LIMIT_WINDOW_MS", 10 * 1000); // Time window for upstream rate limit
 const RATE_LIMIT_MAX = parseEnvInt("RATE_LIMIT_MAX", 30); // Max upstream hits per window
+const FMP_QUOTE_URL = "https://financialmodelingprep.com/stable/quote-short"; // Requires env FMP_API_KEY
 
 const cache = new Map(); // LRU-ish: we reinsert on hit and evict oldest when exceeding capacity
 const inFlight = new Map(); // In-flight deduplication per symbol (promise reuse)
@@ -23,10 +26,7 @@ const upstreamHits = []; // Timestamp queue for simple global rate limiting
 const truncateDetail = (text = "", limit = 200) =>
   text.length > limit ? text.slice(0, limit) : text;
 
-const normalizeSymbol = (raw = "") => {
-  // Normalize: trim + uppercase; don't auto-append .SS/.SZ unless user provides it
-  return raw.trim().toUpperCase();
-};
+const normalizeSymbol = (raw = "") => raw.trim().toUpperCase(); // keep user-provided suffixes
 
 const isAShareSymbol = (symbol) =>
   /^\d{6}$/.test(symbol) || /\.SS$/.test(symbol) || /\.SZ$/.test(symbol) || /^SH/.test(symbol) || /^SZ/.test(symbol);
@@ -70,40 +70,60 @@ const requestSlotAvailable = () => {
 };
 
 const validateQuote = (quote) => {
-  // 修正点 3: 仅强制校验 price；change/percent 可为空并原样返回
-  const price = quote?.regularMarketPrice;
-  const change = Number.isFinite(quote?.regularMarketChange)
-    ? quote.regularMarketChange
-    : null;
-  const percent = Number.isFinite(quote?.regularMarketChangePercent)
-    ? quote.regularMarketChangePercent
-    : null;
+  const price = Number(quote?.price);
+  const change = Number(quote?.change);
   if (!Number.isFinite(price)) {
     const err = new Error("Upstream data missing price");
     err.httpStatus = 502;
-    err.expose = true;
     throw err;
   }
-  const timeVal = quote?.regularMarketTime;
-  let t = null;
-  if (timeVal instanceof Date && !Number.isNaN(timeVal.getTime())) {
-    t = timeVal.toISOString();
-  } else if (Number.isFinite(timeVal)) {
-    const ms = timeVal < 1e12 ? timeVal * 1000 : timeVal;
-    t = new Date(ms).toISOString();
-  } else if (typeof timeVal === "string") {
-    const parsed = Date.parse(timeVal);
-    if (!Number.isNaN(parsed)) {
-      t = new Date(parsed).toISOString();
-    }
+  if (!Number.isFinite(change)) {
+    const err = new Error("Upstream data missing change");
+    err.httpStatus = 502;
+    throw err;
   }
+
+  const previousClose = price - change;
+  const percent = (change / previousClose) * 100;
+  const t = new Date().toISOString();
+
   return { price, change, percent, t };
 };
 
 const fetchAndCache = async (symbol) => {
   console.log(`[upstream fetch] ${symbol}`);
-  const quote = await yahooFinance.quote(symbol);
-  const { price, change, percent, t } = validateQuote(quote);
+  const url = new URL(FMP_QUOTE_URL);
+  url.searchParams.set("symbol", symbol);
+  url.searchParams.set("apikey", FMP_API_KEY);
+
+  const res = await fetch(url);
+  const status = res.status;
+  const text = await res.text();
+
+  if (!res.ok) {
+    const err = new Error(`Upstream HTTP ${status}`);
+    err.httpStatus = status;
+    err.detail = text;
+    throw err;
+  }
+
+  let data;
+  try {
+    data = JSON.parse(text || "");
+  } catch (parseErr) {
+    const err = new Error("Failed to parse upstream JSON");
+    err.httpStatus = 502;
+    err.detail = parseErr.message;
+    throw err;
+  }
+
+  if (!Array.isArray(data) || data.length === 0) {
+    const err = new Error("Upstream returned empty array");
+    err.httpStatus = 502;
+    throw err;
+  }
+
+  const { price, change, percent, t } = validateQuote(data[0]);
   const payload = { symbol, price, change, percent, t };
   setCache(symbol, payload);
   return payload;
@@ -116,13 +136,15 @@ const respondError = (res, status, message, detail) => {
   });
 };
 
-const isUpstream429 = (err) => {
-  const msg = (err && err.message) || "";
-  return (
-    err?.statusCode === 429 ||
-    msg.includes("Failed to get crumb") ||
-    msg.includes("Too Many Requests")
-  );
+const respondCachedOr502 = (res, stalePayload, err) => {
+  if (stalePayload) {
+    return res.json({ ...stalePayload, cached: true });
+  }
+  const status = err?.httpStatus || err?.statusCode || 0;
+  if (status && status !== 200) {
+    return respondError(res, 502, "Upstream error", err?.detail || err?.message);
+  }
+  return respondError(res, 502, "Upstream error", err?.detail || err?.message);
 };
 
 // Health check
@@ -130,7 +152,7 @@ app.get("/ping", (req, res) => {
   res.json({ ok: true });
 });
 
-// Yahoo Finance proxy with cache + in-flight reuse + rate limit
+// Financial Modeling Prep proxy with cache + in-flight reuse + rate limit
 app.get("/stock/:symbol", async (req, res) => {
   const symbol = normalizeSymbol(req.params.symbol || "");
   if (!symbol) {
@@ -153,14 +175,7 @@ app.get("/stock/:symbol", async (req, res) => {
       return res.json(payload);
     } catch (err) {
       const stalePayload = getAnyCache(symbol);
-      if (isUpstream429(err)) {
-        if (stalePayload) {
-          return res.json({ ...stalePayload, stale: true, upstream429: true });
-        }
-        return respondError(res, 429, "Upstream rate limited", err.message);
-      }
-      const status = err.httpStatus || err.statusCode || 502;
-      return respondError(res, status, "Upstream error", err.message);
+      return respondCachedOr502(res, stalePayload, err);
     }
   }
 
@@ -174,7 +189,6 @@ app.get("/stock/:symbol", async (req, res) => {
     return respondError(res, 429, "Rate limited", "Too many requests, try later");
   }
 
-  // 修正点 2: 先登记 inFlight，再 await；移除无意义 catch，确保 finally 删除
   const promise = fetchAndCache(symbol).finally(() => inFlight.delete(symbol));
   inFlight.set(symbol, promise);
 
@@ -183,29 +197,7 @@ app.get("/stock/:symbol", async (req, res) => {
     return res.json(payload);
   } catch (err) {
     const stalePayload = getAnyCache(symbol);
-    if (isUpstream429(err)) {
-      if (stalePayload) {
-        return res.json({ ...stalePayload, stale: true, upstream429: true });
-      }
-      return respondError(res, 429, "Upstream rate limited", err.message);
-    }
-    const statusCode =
-      err.httpStatus ||
-      err.statusCode ||
-      (err.name === "HTTPError" && err.statusCode) ||
-      502;
-
-    // 修正点 1: 502 原样返回；仅不可达/5xx 映射为 503；429 保持
-    if (statusCode === 429) {
-      return respondError(res, 429, "Upstream rate limited", err.message);
-    }
-    if (statusCode === 502) {
-      return respondError(res, 502, "Upstream error", err.message);
-    }
-    if (statusCode >= 500) {
-      return respondError(res, 503, "Upstream unavailable", err.message);
-    }
-    return respondError(res, statusCode, "Upstream error", err.message);
+    return respondCachedOr502(res, stalePayload, err);
   }
 });
 
