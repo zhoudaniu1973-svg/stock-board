@@ -1,7 +1,8 @@
 // src/stock-card.js
+const API_BASE = import.meta.env.VITE_API_BASE;
+
 export async function fetchStock(symbol) {
-  const base = import.meta.env.VITE_API_BASE || "http://localhost:3000";
-  const url = `${base}/stock/${symbol}`;
+  const url = `${API_BASE}/stock/${symbol}`;
 
   try {
     const res = await fetch(url);
