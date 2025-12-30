@@ -20,6 +20,17 @@ const state = {
   ui: { loading: false, message: null }, // UI status
 };
 
+function escapeHtml(str) {
+  if (typeof str !== "string") return str;
+  return str.replace(/[&<>"']/g, (m) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;",
+  })[m]);
+}
+
 function isAShareSymbol(symbol) {
   const s = (symbol || "").toUpperCase();
   return /^\d{6}$/.test(s) || /\.SS$/.test(s) || /\.SZ$/.test(s) || /^SH/.test(s) || /^SZ/.test(s);
@@ -132,34 +143,34 @@ function renderStockCards(stocks) {
       const priceValue = Number.isFinite(s.price) ? s.price : 0;
       const changeValue = Number.isFinite(s.change) ? s.change : 0;
       const percentValue = Number.isFinite(s.percent) ? s.percent : 0;
-      const displayName = s.name || s.symbol;
-      const errorText = hasError ? s.error : "";
+      const displayName = escapeHtml(s.name || s.symbol);
+      const symbolText = escapeHtml(s.symbol);
+      const errorText = escapeHtml(hasError ? s.error : "");
 
       return `
         <div class="stock-card">
           <div class="stock-header">
-            <span class="symbol">${s.symbol}</span>
+            <span class="symbol">${symbolText}</span>
             <span class="name">${displayName}</span>
-            <button class="star-btn ${starred ? "active" : ""}" data-symbol="${s.symbol}" data-name="${s.name}" aria-label="收藏">
+            <button class="star-btn ${starred ? "active" : ""}" data-symbol="${symbolText}" data-name="${displayName}" aria-label="收藏">
               ${starred ? "★" : "☆"}
             </button>
           </div>
           <div class="stock-body">
-            ${
-              hasError
-                ? `<div class="price-row"><span class="price">${errorText}</span></div>
+            ${hasError
+          ? `<div class="price-row"><span class="price">${errorText}</span></div>
                    <div class="change-row ${changeClass}">
                      <span class="change-chip">--</span>
                      <span>--</span>
                    </div>`
-                : `<div class="price-row">
+          : `<div class="price-row">
                      <span class="price">$${priceValue.toFixed(2)}</span>
                    </div>
                    <div class="change-row ${changeClass}">
                      <span class="change-chip">${arrow} ${changeValue.toFixed(2)}</span>
                      <span>${percentValue.toFixed(2)}%</span>
                    </div>`
-            }
+        }
           </div>
         </div>
       `;
@@ -168,8 +179,6 @@ function renderStockCards(stocks) {
 }
 
 function renderLayout() {
-  const app = document.querySelector("#app");
-
   const isQueryEmpty = state.query.trim() === "";
   const hasSearchResult = Boolean(state.searchResult);
   const showInitialEmpty = isQueryEmpty && !hasSearchResult;
@@ -179,94 +188,75 @@ function renderLayout() {
     .map((sym) => state.quotesBySymbol[sym])
     .filter(Boolean);
 
-  const watchlistContent = state.watchlist.length
-    ? watchlistQuotes.length
-      ? `<div class="card-grid">${renderStockCards(watchlistQuotes)}</div>`
-      : `<div class="watchlist-empty"><div class="empty-text">加载中...</div></div>`
-    : `<div class="watchlist-empty">
-        <div class="empty-title">暂无自选股</div>
-        <div class="empty-text">点击星标添加</div>
-      </div>`;
+  // 1. Watchlist Container
+  const watchlistContainer = document.querySelector("#watchlist-container");
+  if (watchlistContainer) {
+    const watchlistContent = state.watchlist.length
+      ? watchlistQuotes.length
+        ? `<div class="card-grid">${renderStockCards(watchlistQuotes)}</div>`
+        : `<div class="watchlist-empty"><div class="empty-text">加载中...</div></div>`
+      : `<div class="watchlist-empty">
+          <div class="empty-title">暂无自选股</div>
+          <div class="empty-text">点击星标添加</div>
+        </div>`;
 
-  const searchSection = state.searchResult
-    ? `
-      <section class="search-result">
-        <div class="section-header">
-          <h2 class="section-title">搜索结果</h2>
-        </div>
-        <div class="card-grid single">
-          ${renderStockCards([state.searchResult])}
-        </div>
-      </section>
-    `
-    : "";
-
-  const initialEmptyCard = showInitialEmpty
-    ? `
-      <div class="empty-card">
-        <div class="empty-icon">⬇</div>
-        <div class="empty-title">搜索股票开始</div>
-        <div class="empty-text">在上方搜索框输入股票代码或公司名</div>
-      </div>
-    `
-    : "";
-
-  const notFoundCard = showNotFound
-    ? `
-      <div class="empty-card">
-        <div class="empty-icon">🙁</div>
-        <div class="empty-title">未找到</div>
-        <div class="empty-text">请检查代码或公司名称后再试</div>
-      </div>
-    `
-    : "";
-
-  const statusText = state.ui.message || (state.ui.loading ? "加载中..." : "");
-
-  app.innerHTML = `
-    <div class="page">
-      <header class="top-bar">
-        <div class="top-icon">★</div>
-        <div class="top-title">股票数据可视化工具</div>
-        <button class="icon-button" data-action="refresh" aria-label="刷新">
-          ↻
-        </button>
-      </header>
-
-      <section class="hero">
-        <div class="hero-icon">⬇</div>
-        <h1 class="hero-title">股票数据可视化</h1>
-      </section>
-
-      <section class="search-section">
-        <div class="search-box">
-          <span class="search-icon">🔍</span>
-          <input
-            type="text"
-            class="search-input"
-            placeholder="搜索股票代码或公司名..."
-            aria-label="搜索股票"
-            value="${state.query}"
-          />
-        </div>
-      </section>
-
-      ${searchSection}
-      ${initialEmptyCard}
-      ${notFoundCard}
-
+    watchlistContainer.innerHTML = `
       <section class="watchlist">
         <div class="section-header">
           <h2 class="section-title">我的自选股 (${state.watchlist.length})</h2>
         </div>
         ${watchlistContent}
       </section>
+    `;
+  }
 
-      ${statusText ? `<div class="status-text">${statusText}</div>` : ""}
-    </div>
-  `;
+  // 2. Search Result Container
+  const searchResultContainer = document.querySelector("#search-result-container");
+  if (searchResultContainer) {
+    searchResultContainer.innerHTML = state.searchResult
+      ? `
+        <section class="search-result">
+          <div class="section-header">
+            <h2 class="section-title">搜索结果</h2>
+          </div>
+          <div class="card-grid single">
+            ${renderStockCards([state.searchResult])}
+          </div>
+        </section>
+      `
+      : "";
+  }
 
-  bindEventsOnce();
+  // 3. Initial Empty Container
+  const initialEmptyContainer = document.querySelector("#initial-empty-container");
+  if (initialEmptyContainer) {
+    if (showInitialEmpty) {
+      initialEmptyContainer.innerHTML = `
+        <div class="empty-card">
+          <div class="empty-icon">⬇</div>
+          <div class="empty-title">搜索股票开始</div>
+          <div class="empty-text">在上方搜索框输入股票代码或公司名</div>
+        </div>
+      `;
+    } else if (showNotFound) {
+      initialEmptyContainer.innerHTML = `
+        <div class="empty-card">
+          <div class="empty-icon">🙁</div>
+          <div class="empty-title">未找到</div>
+          <div class="empty-text">请检查代码或公司名称后再试</div>
+        </div>
+      `;
+    } else {
+      initialEmptyContainer.innerHTML = "";
+    }
+  }
+
+  // 4. Status Container
+  const statusContainer = document.querySelector("#status-container");
+  if (statusContainer) {
+    const statusText = state.ui.message || (state.ui.loading ? "加载中..." : "");
+    statusContainer.innerHTML = statusText ? `<div class="status-text">${statusText}</div>` : "";
+  }
 }
 
 function bindEventsOnce() {
@@ -313,16 +303,15 @@ function bindEventsOnce() {
     }
   });
 
-  const searchInput = app.querySelector(".search-input");
-  if (searchInput) {
-    searchInput.addEventListener("input", (e) => {
+  app.addEventListener("input", (e) => {
+    if (e.target && e.target.classList.contains("search-input")) {
       const value = e.target.value;
       if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
       searchDebounceTimer = setTimeout(() => {
         handleSearch(value);
       }, 400); // debounce 400ms
-    });
-  }
+    }
+  });
 
   eventsBound = true;
 }
@@ -455,5 +444,6 @@ async function handleSearch(rawInput) {
   }
 }
 
-// 初始加载（无自动轮询，仅手动/点击刷新）
+// 初始加载
+bindEventsOnce();
 refreshData({ silent: true });

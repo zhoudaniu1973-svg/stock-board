@@ -1,17 +1,48 @@
 <!doctype html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>股票数据可视化</title>
-  </head>
-  <body>
-    <div id="app"></div>
-    <details id="debugPanel">
-      <summary>Debug</summary>
-      <pre id="debugOutput">{}</pre>
-    </details>
-    <script type="module" src="/src/main.js"></script>
-  </body>
+
+<head>
+  <meta charset="UTF-8" />
+  <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>股票数据可视化</title>
+</head>
+
+<body>
+  <div id="app">
+    <div class="page">
+      <header class="top-bar">
+        <div class="top-icon">★</div>
+        <div class="top-title">股票数据可视化工具</div>
+        <button class="icon-button" data-action="refresh" aria-label="刷新">
+          ↻
+        </button>
+      </header>
+
+      <section class="hero">
+        <div class="hero-icon">⬇</div>
+        <h1 class="hero-title">股票数据可视化</h1>
+      </section>
+
+      <section class="search-section">
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input type="text" class="search-input" placeholder="搜索股票代码或公司名..." aria-label="搜索股票" />
+        </div>
+      </section>
+
+      <div id="search-result-container"></div>
+      <div id="initial-empty-container"></div>
+      <div id="watchlist-container"></div>
+      <div id="status-container"></div>
+    </div>
+  </div>
+
+  <details id="debugPanel">
+    <summary>Debug</summary>
+    <pre id="debugOutput">{}</pre>
+  </details>
+  <script type="module" src="/src/main.js"></script>
+</body>
+
 </html>
