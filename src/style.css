@@ -11,6 +11,8 @@
 body {
   margin: 0;
   background: #f5f7fb;
+  min-height: 100vh;
+  overflow-y: auto;
 }
 
 #app {
@@ -357,18 +359,17 @@ body {
 /* 股票走势图 */
 .stock-chart {
   width: 100%;
-  height: 120px;
+  height: 200px;
   margin-top: 8px;
   border-radius: 8px;
   overflow: hidden;
-  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  background: #fff;
 }
 
 .stock-chart img {
   width: 100%;
   height: 100%;
   object-fit: contain;
-  background: #fff;
 }
 
 .status-text {

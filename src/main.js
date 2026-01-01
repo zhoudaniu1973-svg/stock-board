@@ -376,12 +376,18 @@ function renderStockDetail(quote) {
   // 收藏状态
   const starred = isInWatchlist(s.symbol);
 
-  // 额外指标（A 股有更多数据）
-  const open = Number.isFinite(s.open) ? s.open.toFixed(2) : "--";
-  const high = Number.isFinite(s.high) ? s.high.toFixed(2) : "--";
-  const low = Number.isFinite(s.low) ? s.low.toFixed(2) : "--";
-  const prevClose = Number.isFinite(s.prevClose) ? s.prevClose.toFixed(2) : "--";
-  const volume = s.volume ? (s.volume / 10000).toFixed(2) + "万" : "--";
+  // 额外指标（兼容不同的字段名，后端返回 openPrice/highPrice/lowPrice）
+  const openVal = s.openPrice ?? s.open;
+  const highVal = s.highPrice ?? s.high;
+  const lowVal = s.lowPrice ?? s.low;
+  const prevCloseVal = s.prevClose;
+  const volumeVal = s.volume;
+
+  const open = Number.isFinite(openVal) ? openVal.toFixed(2) : "--";
+  const high = Number.isFinite(highVal) ? highVal.toFixed(2) : "--";
+  const low = Number.isFinite(lowVal) ? lowVal.toFixed(2) : "--";
+  const prevClose = Number.isFinite(prevCloseVal) ? prevCloseVal.toFixed(2) : "--";
+  const volume = volumeVal ? (volumeVal / 10000).toFixed(2) + "万" : "--";
 
   return `
     <div class="detail-header">
@@ -609,6 +615,12 @@ async function refreshData(options = {}) {
             change: result.change,
             percent: result.changePercent,
             market: result.market, // 市场标识：SH/SZ/US
+            // 详情页需要的额外字段
+            openPrice: result.openPrice,
+            highPrice: result.highPrice,
+            lowPrice: result.lowPrice,
+            prevClose: result.prevClose,
+            volume: result.volume,
           };
         } else {
           // 如果有缓存数据但请求失败，保留缓存数据，只标记为过期
@@ -764,6 +776,12 @@ async function handleSearch(rawInput) {
         change: result.change,
         percent: result.changePercent,
         market: result.market,
+        // 详情页需要的额外字段
+        openPrice: result.openPrice,
+        highPrice: result.highPrice,
+        lowPrice: result.lowPrice,
+        prevClose: result.prevClose,
+        volume: result.volume,
       };
       state.searchResult = quote;
       state.quotesBySymbol[quote.symbol] = quote;
