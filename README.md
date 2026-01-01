@@ -127,7 +127,7 @@ cd android && ./gradlew assembleDebug
 
 ## 🧠 开发说明
 
-本项目由本人主导设计与实现，借助 **AI（Gemini）** 完成代码编写与问题排查。
+本项目由本人主导设计与实现，借助 **AI（Gemini，antigravity,claude）** 完成代码编写与问题排查。
 
 - **我负责**：功能规划、架构设计、需求判断
 - **AI 负责**：代码生成、调试排错、工具链配置
