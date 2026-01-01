@@ -111,6 +111,93 @@ body {
   background: transparent;
 }
 
+/* 搜索建议下拉框 */
+.suggestions-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+  max-height: 300px;
+  overflow-y: auto;
+  z-index: 50;
+  display: none;
+}
+
+.suggestions-dropdown.active {
+  display: block;
+}
+
+.suggestion-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: background-color 0.15s;
+}
+
+.suggestion-item:hover {
+  background: #f9fafb;
+}
+
+.suggestion-item:first-child {
+  border-radius: 12px 12px 0 0;
+}
+
+.suggestion-item:last-child {
+  border-radius: 0 0 12px 12px;
+}
+
+.suggestion-item:only-child {
+  border-radius: 12px;
+}
+
+.suggestion-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.suggestion-symbol {
+  font-weight: 700;
+  font-size: 15px;
+  color: #0f172a;
+}
+
+.suggestion-name {
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.suggestion-market {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.suggestion-market.us {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.suggestion-market.sh,
+.suggestion-market.sz {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+/* 搜索区域需要相对定位 */
+.search-section {
+  position: relative;
+}
+
 .empty-card {
   background: #ffffff;
   border: 1px solid #e5e7eb;
@@ -315,9 +402,12 @@ body {
 }
 
 @keyframes pulse {
-  0%, 100% {
+
+  0%,
+  100% {
     opacity: 1;
   }
+
   50% {
     opacity: 0.4;
   }

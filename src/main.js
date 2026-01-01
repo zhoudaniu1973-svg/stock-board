@@ -12,6 +12,7 @@ const WATCHLIST_KEY = "stock-board:watchlist";
 const QUOTES_CACHE_KEY = "stock-board:quotes-cache"; // 缓存行情数据
 let eventsBound = false;
 let searchDebounceTimer = null;
+let suggestDebounceTimer = null; // 搜索建议防抖计时器
 
 // 从 localStorage 加载缓存的行情数据
 function loadQuotesCache() {
@@ -316,6 +317,16 @@ function bindEventsOnce() {
       }
       refreshData({ silent: true });
     }
+
+    // 点击搜索建议项
+    const suggestionItem = e.target.closest(".suggestion-item");
+    if (suggestionItem) {
+      const symbol = suggestionItem.dataset.symbol;
+      if (symbol) {
+        handleSuggestionClick(symbol);
+      }
+      return;
+    }
   });
 
   app.addEventListener("keydown", (e) => {
@@ -326,17 +337,44 @@ function bindEventsOnce() {
       target.classList.contains("search-input") &&
       e.key === "Enter"
     ) {
+      hideSuggestions(); // 按回车时隐藏建议
       handleSearch(target.value);
+    }
+
+    // ESC 键隐藏建议
+    if (e.key === "Escape") {
+      hideSuggestions();
     }
   });
 
   app.addEventListener("input", (e) => {
     if (e.target && e.target.classList.contains("search-input")) {
       const value = e.target.value;
+
+      // 触发搜索建议（快速响应）
+      if (suggestDebounceTimer) clearTimeout(suggestDebounceTimer);
+      suggestDebounceTimer = setTimeout(async () => {
+        if (value.trim()) {
+          const suggestions = await fetchSearchSuggestions(value);
+          renderSuggestions(suggestions);
+        } else {
+          hideSuggestions();
+        }
+      }, 200); // 200ms debounce for suggestions
+
+      // 触发搜索（稍慢）
       if (searchDebounceTimer) clearTimeout(searchDebounceTimer);
       searchDebounceTimer = setTimeout(() => {
         handleSearch(value);
-      }, 400); // debounce 400ms
+      }, 400); // 400ms debounce for search
+    }
+  });
+
+  // 点击页面其他地方时隐藏搜索建议
+  document.addEventListener("click", (e) => {
+    const searchSection = e.target.closest(".search-section");
+    if (!searchSection) {
+      hideSuggestions();
     }
   });
 
@@ -413,6 +451,87 @@ async function refreshData(options = {}) {
     saveQuotesCache(); // 保存最新数据到缓存
     renderLayout();
   }
+}
+
+// ==================== 搜索建议功能 ====================
+
+const API_BASE = import.meta.env.VITE_API_BASE;
+
+/**
+ * 获取搜索建议
+ */
+async function fetchSearchSuggestions(keyword) {
+  if (!keyword || !keyword.trim()) return [];
+
+  try {
+    const url = `${API_BASE}/search?q=${encodeURIComponent(keyword)}`;
+    const res = await fetch(url);
+    if (!res.ok) return [];
+
+    const data = await res.json();
+    return data.suggestions || [];
+  } catch (err) {
+    console.error("[search suggestions] 错误:", err);
+    return [];
+  }
+}
+
+/**
+ * 渲染搜索建议列表
+ */
+function renderSuggestions(suggestions) {
+  const container = document.querySelector("#search-suggestions");
+  if (!container) return;
+
+  if (!suggestions || suggestions.length === 0) {
+    container.innerHTML = "";
+    container.classList.remove("active");
+    return;
+  }
+
+  const html = suggestions.map(s => {
+    const marketLabel = s.market === "US" ? "美股" : (s.market === "SH" ? "沪市" : "深市");
+    const marketClass = s.market.toLowerCase();
+    return `
+      <div class="suggestion-item" data-symbol="${escapeHtml(s.symbol)}" data-market="${s.market}">
+        <div class="suggestion-left">
+          <span class="suggestion-symbol">${escapeHtml(s.symbol)}</span>
+          <span class="suggestion-name">${escapeHtml(s.name)}</span>
+        </div>
+        <span class="suggestion-market ${marketClass}">${marketLabel}</span>
+      </div>
+    `;
+  }).join("");
+
+  container.innerHTML = html;
+  container.classList.add("active");
+}
+
+/**
+ * 隐藏搜索建议
+ */
+function hideSuggestions() {
+  const container = document.querySelector("#search-suggestions");
+  if (container) {
+    container.classList.remove("active");
+  }
+}
+
+/**
+ * 处理搜索建议点击
+ */
+function handleSuggestionClick(symbol) {
+  // 填充搜索框
+  const input = document.querySelector(".search-input");
+  if (input) {
+    input.value = symbol;
+  }
+
+  // 隐藏建议列表
+  hideSuggestions();
+
+  // 执行搜索
+  handleSearch(symbol);
 }
 
 async function handleSearch(rawInput) {

@@ -202,6 +202,93 @@ app.get("/stock/:symbol", async (req, res) => {
   }
 });
 
+// ==================== 股票搜索建议 API ====================
+
+const SINA_SUGGEST_URL = "https://suggest3.sinajs.cn/suggest/type=&key=";
+
+/**
+ * 解析新浪搜索建议返回数据
+ * 格式: var suggestdata="名称,类型,代码,新浪代码,拼音,权重;..."
+ */
+const parseSuggestResponse = (rawText) => {
+  // 匹配 var suggestdata_xxx="..."
+  const match = rawText.match(/var\s+\w+="([^"]*)"/);
+  if (!match || !match[1]) return [];
+
+  const dataString = match[1];
+  if (!dataString.trim()) return [];
+
+  const items = dataString.split(";").filter(Boolean);
+  const suggestions = [];
+
+  for (const item of items) {
+    const fields = item.split(",");
+    if (fields.length < 4) continue;
+
+    const name = fields[0];       // 股票名称
+    const typeCode = fields[1];   // 类型码：11=A股, 74=美股
+    const code = fields[2];       // 股票代码
+    const sinaCode = fields[3];   // 新浪代码格式
+
+    // 判断市场类型
+    let market = "US";
+    if (sinaCode.startsWith("sh")) market = "SH";
+    else if (sinaCode.startsWith("sz")) market = "SZ";
+    else if (sinaCode.startsWith("gb_")) market = "US";
+
+    suggestions.push({
+      symbol: code.toUpperCase(),
+      name,
+      market,
+      sinaCode,
+      typeCode,
+    });
+  }
+
+  return suggestions;
+};
+
+// 股票搜索建议路由
+app.get("/search", async (req, res) => {
+  const keyword = (req.query.q || "").trim();
+
+  if (!keyword) {
+    return res.json({ suggestions: [], keyword: "" });
+  }
+
+  const url = `${SINA_SUGGEST_URL}${encodeURIComponent(keyword)}&name=suggestdata`;
+
+  console.log(`[search] 关键词: ${keyword}`);
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "Referer": "https://finance.sina.com.cn",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Sina suggest API HTTP ${response.status}`);
+    }
+
+    // 新浪建议 API 返回 GBK 编码，需要使用 iconv-lite 解码
+    const buffer = await response.arrayBuffer();
+    const text = iconv.decode(Buffer.from(buffer), "gbk");
+    const suggestions = parseSuggestResponse(text);
+
+    console.log(`[search] 找到 ${suggestions.length} 个结果`);
+
+    return res.json({
+      suggestions: suggestions.slice(0, 10), // 最多返回 10 条
+      keyword
+    });
+  } catch (err) {
+    console.error("[search error]:", err.message);
+    return respondError(res, 502, "Search API error", err.message);
+  }
+});
+
 // ==================== 新浪 API 代理 ====================
 
 const SINA_API_BASE = "http://hq.sinajs.cn/list=";
