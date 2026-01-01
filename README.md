@@ -1,143 +1,154 @@
-📈 Stock Board · 股票数据可视化看板
+# 📈 Stock Board · 股票数据可视化看板
 
-一个用于快速查询股票价格、涨跌幅，并支持本地收藏的轻量级 Web 看板。
-项目重点不在“功能复杂”，而在于完整走通一条现代 Web 应用的开发与部署链路。
+一个支持 **A 股 + 美股** 实时行情查询的轻量级 Web 看板，具备模糊搜索、自选股管理和智能刷新功能。
 
-✨ 功能概览
+![股票看板截图](https://img.shields.io/badge/Status-Active-brightgreen)
 
-🔍 股票代码搜索（如 AAPL）
+## ✨ 核心功能
 
-💲 实时价格与涨跌幅展示
+| 功能 | 说明 |
+|------|------|
+| 🔍 **模糊搜索** | 输入"茅台"显示 600519，输入"nvidia"显示 NVDA |
+| 🇨🇳🇺🇸 **双市场支持** | A 股（沪/深）和美股实时行情 |
+| 💰 **智能货币符号** | A 股显示 ¥，美股显示 $ |
+| ⭐ **自选股收藏** | 本地持久化，支持 A 股和美股混合自选 |
+| ⏱️ **智能刷新** | 开盘时间 30 秒更新，休市时间 5 分钟更新 |
+| 📊 **交易状态指示** | 实时显示 A 股/美股交易状态 |
 
-⭐ 自选股收藏（浏览器本地持久化）
+## 🛠️ 技术栈
 
-🌐 前后端分离部署
+### 前端
+- **Vite** + 原生 JavaScript
+- localStorage 自选股持久化
+- 响应式设计
 
-⚡ 页面秒级加载，零登录、零配置
+### 后端
+- **Node.js** + **Express**
+- 代理新浪股票 API（行情 + 搜索建议）
+- **iconv-lite** 处理 GBK 编码
+- 缓存 + 限流 + 请求去重
 
-🧱 技术结构
-前端
+### Android
+- **Capacitor** 封装 WebView
+- 支持打包为 APK
 
-Vite + 原生 JavaScript
+## 📁 项目结构
 
-纯前端渲染（Static Site）
+```
+stock-board/
+├── server.js              # 后端 API 服务
+├── index.html             # 前端入口
+├── src/
+│   ├── main.js            # 主逻辑 + 自动刷新
+│   ├── stock-card.js      # 股票数据获取
+│   ├── sina-parser.js     # 新浪 API 解析（前端备用）
+│   └── style.css          # 样式
+├── android/               # Android 项目（Capacitor）
+├── .env                   # 环境变量
+└── package.json
+```
 
-localStorage 做自选股持久化
+## 🚀 快速启动
 
-通过环境变量配置后端 API 地址
+### 1. 安装依赖
 
-后端
+```bash
+npm install
+```
 
-Node.js + Express
+### 2. 配置环境变量
 
-股票数据代理接口（避免前端直连第三方 API）
+创建 `.env` 文件：
 
-提供稳定、可部署的 REST API
+```env
+FMP_API_KEY=your_api_key_here  # 可选，FMP 备用数据源
+```
 
-部署为 Render Web Service
+创建 `.env.development` 文件：
 
-🗂️ 项目结构
-.
-├─ server.js              # 后端 API 服务
-├─ index.html             # 前端入口
-├─ src/
-│  ├─ main.js             # 页面逻辑
-│  ├─ stock-card.js       # 股票卡片组件
-│  └─ style.css           # 样式
-├─ package.json
-└─ README.md
+```env
+VITE_API_BASE=http://localhost:3000
+```
 
-🚀 部署架构
-浏览器（前端 Static Site）
-        ↓
-Render Static Site
-        ↓
-HTTP API
-        ↓
-Render Web Service（Node.js）
+### 3. 启动后端
 
+```bash
+node server.js
+```
 
-前端：Render Static Site
+### 4. 启动前端
 
-后端：Render Web Service
+```bash
+npm run dev
+```
 
-前后端通过 VITE_API_BASE 解耦连接
+访问 http://localhost:5173/
 
-全流程自动化部署（GitHub → Render）
+## 📡 API 接口
 
-🧠 开发方式说明（重点）
+### 股票行情
 
-本项目由本人主导设计与实现，借助 AI（ChatGPT / Codex）完成代码编写与问题排查。
+| 接口 | 说明 | 示例 |
+|------|------|------|
+| `GET /sina/:symbol` | 单只股票行情 | `/sina/AAPL` 或 `/sina/600519` |
+| `GET /sina-batch?symbols=` | 批量查询 | `/sina-batch?symbols=AAPL,600519` |
+| `GET /search?q=` | 模糊搜索 | `/search?q=茅台` |
+| `GET /stock/:symbol` | FMP 行情（备用） | `/stock/AAPL` |
 
-使用方式不是“让 AI 替我写项目”，而是：
+### 响应示例
 
-我负责：
+```json
+{
+  "symbol": "600519",
+  "name": "贵州茅台",
+  "price": 1377.18,
+  "change": -12.54,
+  "percent": -0.9,
+  "market": "SH",
+  "source": "sina"
+}
+```
 
-功能边界判断
+## 📱 Android 打包
 
-架构取舍（前后端是否拆分、是否需要数据库）
+```bash
+# 构建前端
+npm run build
 
-部署路径选择
+# 同步到 Android
+npx cap sync android
 
-AI 负责：
+# 打开 Android Studio
+npx cap open android
 
-代码生成与修改
+# 或直接构建 APK
+cd android && ./gradlew assembleDebug
+```
 
-报错定位
+## 🧠 开发说明
 
-Render / GitHub / Vite 等工具链细节补全
+本项目由本人主导设计与实现，借助 **AI（Gemini）** 完成代码编写与问题排查。
+
+- **我负责**：功能规划、架构设计、需求判断
+- **AI 负责**：代码生成、调试排错、工具链配置
 
 所有代码均在本地理解、运行、调试并最终上线。
 
-📌 关于数据持久化
+## 📝 数据源说明
 
-当前版本使用 浏览器本地持久化（localStorage）
+- **新浪财经 API**（主要）：免费、实时、支持 A 股 + 美股
+- **Financial Modeling Prep**（备用）：需 API Key
 
-特点：
+> ⚠️ 新浪 API 为非官方接口，可能随时变动。生产环境建议使用付费数据源。
 
-每个浏览器 / 设备独立
+## 🔗 相关链接
 
-无账号、无登录、零成本
+- 仓库：https://github.com/zhoudaniu1973-svg/stock-board
 
-这是一个刻意选择：
-
-作为工具型 / 展示型项目，足够且合理
-
-未引入数据库与用户系统，避免过度工程化
-
-🧭 项目定位
-
-✅ 技术展示型项目
-
-✅ AI 协作开发实践样例
-
-❌ 非商业产品
-
-❌ 非重后端系统
-
-目标是：
-用最小复杂度，跑通完整现代 Web 开发闭环。
-
-🔗 在线地址
-
-前端：👉 https://stock-board-xxxx.com/
-
-后端 API：👉 https://stock-board-api.onrender.com/
-
-📝 后续可扩展方向（未实现）
-
-服务器端收藏（用户同步）
-
-历史价格 / 简单图表
-
-多市场支持（美股 / 港股）
-
-以上均为“可以做，但刻意没做”。
-
-📄 License
+## 📄 License
 
 MIT
-本项目曾尝试基于 Yahoo Finance 抓取行情，过程中验证了并发去重、缓存、限流、stale 回退等工程模式；
-实际生产环境建议使用付费行情 API。”
 
-20251229本次修改消除不稳定第三方接口与部署耦合问题
+---
+
+*最后更新：2026-01-01*
