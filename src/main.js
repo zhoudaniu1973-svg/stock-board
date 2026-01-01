@@ -68,7 +68,7 @@ function loadWatchlist() {
     if (!Array.isArray(parsed)) return [];
     return parsed
       .map((s) => (typeof s === "string" ? s.toUpperCase() : null))
-      .filter((s) => s && !isAShareSymbol(s)); // 过滤 A 股，不再请求
+      .filter(Boolean); // 不再过滤 A 股，新浪 API 支持
   } catch (err) {
     console.warn("Failed to load watchlist", err);
     return [];
@@ -89,8 +89,7 @@ function isInWatchlist(symbol) {
 
 function upsertWatchlist(symbol, quote) {
   const sym = symbol.toUpperCase();
-  // 禁止 A 股加入自选
-  if (isAShareSymbol(sym)) return;
+  // 现在支持 A 股加入自选（使用新浪 API）
   if (!isInWatchlist(sym)) {
     state.watchlist.push(sym);
     saveWatchlist();
@@ -171,6 +170,10 @@ function renderStockCards(stocks) {
       const symbolText = escapeHtml(s.symbol);
       const errorText = escapeHtml(hasError ? s.error : "");
 
+      // 根据市场类型选择货币符号：A 股用 ¥，美股用 $
+      const isAShare = s.market === "SH" || s.market === "SZ";
+      const currencySymbol = isAShare ? "¥" : "$";
+
       return `
         <div class="stock-card">
           <div class="stock-header">
@@ -188,7 +191,7 @@ function renderStockCards(stocks) {
                      <span>--</span>
                    </div>`
           : `<div class="price-row">
-                     <span class="price">$${priceValue.toFixed(2)}</span>
+                     <span class="price">${currencySymbol}${priceValue.toFixed(2)}</span>
                    </div>
                    <div class="change-row ${changeClass}">
                      <span class="change-chip">${arrow} ${changeValue.toFixed(2)}</span>
@@ -344,7 +347,7 @@ async function refreshData(options = {}) {
   // 缓存优先策略：如果有缓存数据，不显示加载状态，后台静默刷新
   const hasCachedData = state.watchlist.some((sym) => state.quotesBySymbol[sym]);
   const showLoading = !hasCachedData && !options.silent;
-  
+
   if (showLoading) {
     state.ui = { loading: true, message: "加载中..." };
     renderLayout();
@@ -354,7 +357,6 @@ async function refreshData(options = {}) {
 
   try {
     const tasks = state.watchlist
-      .filter((sym) => !isAShareSymbol(sym))
       .map(async (sym) => {
         const meta = findStockMeta(sym);
         const result = await fetchStock(sym);
@@ -368,10 +370,11 @@ async function refreshData(options = {}) {
         if (result && !result.error) {
           updatedQuotes[sym] = {
             symbol: sym,
-            name: meta.name || sym,
+            name: result.name || meta.name || sym, // 优先使用新浪返回的中文名称
             price: result.price,
             change: result.change,
             percent: result.changePercent,
+            market: result.market, // 市场标识：SH/SZ/US
           };
         } else {
           // 如果有缓存数据但请求失败，保留缓存数据，只标记为过期
@@ -433,22 +436,19 @@ async function handleSearch(rawInput) {
   renderLayout();
 
   try {
-    if (isAShareSymbol(value)) {
-      statusMessage = "仅支持美股/指数";
-      state.searchResult = null;
-      return;
-    }
+    // 现在支持 A 股搜索（使用新浪 API）
     const meta = findStockMeta(value);
     const result = await fetchStock(meta.symbol);
     const matched = report.checks.find((c) => c.matchSymbol || c.matchName);
 
     if (result && !result.error) {
       const quote = {
-        symbol: meta.symbol.toUpperCase(),
-        name: meta.name,
+        symbol: result.symbol || meta.symbol.toUpperCase(),
+        name: result.name || meta.name, // 优先使用新浪返回的中文名称
         price: result.price,
         change: result.change,
         percent: result.changePercent,
+        market: result.market,
       };
       state.searchResult = quote;
       state.quotesBySymbol[quote.symbol] = quote;

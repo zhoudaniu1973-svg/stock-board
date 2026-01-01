@@ -3,6 +3,7 @@ const FMP_API_KEY = process.env.FMP_API_KEY;
 
 const express = require("express");
 const cors = require("cors");
+const iconv = require("iconv-lite"); // 用于新浪 API 的 GBK 解码
 
 const app = express();
 app.use(cors());
@@ -198,6 +199,238 @@ app.get("/stock/:symbol", async (req, res) => {
   } catch (err) {
     const stalePayload = getAnyCache(symbol);
     return respondCachedOr502(res, stalePayload, err);
+  }
+});
+
+// ==================== 新浪 API 代理 ====================
+
+const SINA_API_BASE = "http://hq.sinajs.cn/list=";
+
+/**
+ * 判断股票代码所属市场并转换为新浪格式
+ */
+const formatSinaSymbol = (symbol) => {
+  const s = (symbol || "").trim().toUpperCase();
+
+  // 已带前缀的情况
+  if (s.startsWith("SH") && /^SH\d{6}$/.test(s)) return `sh${s.slice(2)}`;
+  if (s.startsWith("SZ") && /^SZ\d{6}$/.test(s)) return `sz${s.slice(2)}`;
+  if (s.startsWith("GB_")) return s.toLowerCase();
+
+  // 纯 6 位数字判断（A 股）
+  if (/^\d{6}$/.test(s)) {
+    const firstDigit = s[0];
+    if (["6", "9"].includes(firstDigit)) return `sh${s}`;
+    if (["0", "2", "3"].includes(firstDigit)) return `sz${s}`;
+    return `sh${s}`;
+  }
+
+  // 后缀格式
+  if (/\.SS$/.test(s) || /\.SH$/.test(s)) return `sh${s.replace(/\.(SS|SH)$/, "")}`;
+  if (/\.SZ$/.test(s)) return `sz${s.replace(/\.SZ$/, "")}`;
+
+  // 其他视为美股
+  return `gb_${s.toLowerCase()}`;
+};
+
+/**
+ * 解析新浪 A 股数据
+ */
+const parseAShareData = (dataString, sinaSymbol) => {
+  const fields = dataString.split(",");
+  if (fields.length < 10) return null;
+
+  const stockName = fields[0] || "";
+  const openPrice = parseFloat(fields[1]);
+  const prevClose = parseFloat(fields[2]);
+  const currentPrice = parseFloat(fields[3]);
+  const highPrice = parseFloat(fields[4]);
+  const lowPrice = parseFloat(fields[5]);
+  const volume = parseInt(fields[8], 10);
+  const amount = parseFloat(fields[9]);
+  const tradeDate = fields[30] || "";
+  const tradeTime = fields[31] || "";
+
+  const price = currentPrice || prevClose;
+  if (isNaN(price) || price === 0) return null;
+
+  const change = isNaN(prevClose) ? 0 : (price - prevClose);
+  const changePercent = isNaN(prevClose) || prevClose === 0 ? 0 : ((change / prevClose) * 100);
+  const symbol = sinaSymbol.replace(/^(sh|sz)/i, "").toUpperCase();
+
+  return {
+    symbol,
+    name: stockName,
+    price,
+    change: parseFloat(change.toFixed(2)),
+    percent: parseFloat(changePercent.toFixed(2)),
+    tradeTime: `${tradeDate} ${tradeTime}`.trim(),
+    openPrice: openPrice || null,
+    highPrice: highPrice || null,
+    lowPrice: lowPrice || null,
+    prevClose: prevClose || null,
+    volume: volume || null,
+    amount: amount || null,
+    market: sinaSymbol.startsWith("sh") ? "SH" : "SZ",
+    source: "sina",
+    t: new Date().toISOString(),
+  };
+};
+
+/**
+ * 解析新浪美股数据
+ */
+const parseUSStockData = (dataString, sinaSymbol) => {
+  const fields = dataString.split(",");
+  if (fields.length < 5) return null;
+
+  const stockName = fields[0] || "";
+  const currentPrice = parseFloat(fields[1]);
+  const changePercent = parseFloat(fields[2]);
+  const tradeTime = fields[3] || "";
+  const priceChange = parseFloat(fields[4]);
+
+  if (isNaN(currentPrice)) return null;
+
+  // 优先从 sinaSymbol 提取代码（更可靠），字段 14 可能有偏差
+  const symbol = sinaSymbol.replace("gb_", "").toUpperCase();
+
+  return {
+    symbol,
+    name: stockName,
+    price: currentPrice,
+    change: isNaN(priceChange) ? 0 : priceChange,
+    percent: isNaN(changePercent) ? 0 : changePercent,
+    tradeTime,
+    openPrice: parseFloat(fields[6]) || null,
+    highPrice: parseFloat(fields[7]) || null,
+    week52High: parseFloat(fields[8]) || null,
+    week52Low: parseFloat(fields[9]) || null,
+    marketCap: fields[10] || null,
+    pe: parseFloat(fields[11]) || null,
+    volume: fields[13] || null,
+    market: "US",
+    source: "sina",
+    t: new Date().toISOString(),
+  };
+};
+
+/**
+ * 解析新浪 API 响应
+ */
+const parseSinaResponse = (rawText) => {
+  const match = rawText.match(/var\s+hq_str_([^=]+)="([^"]*)"/);
+  if (!match) return null;
+
+  const sinaSymbol = match[1];
+  const dataString = match[2];
+  if (!dataString || dataString.trim() === "") return null;
+
+  if (sinaSymbol.startsWith("sh") || sinaSymbol.startsWith("sz")) {
+    return parseAShareData(dataString, sinaSymbol);
+  } else if (sinaSymbol.startsWith("gb_")) {
+    return parseUSStockData(dataString, sinaSymbol);
+  }
+  return null;
+};
+
+/**
+ * 从新浪 API 获取股票数据
+ */
+const fetchSinaStock = async (symbol) => {
+  const sinaSymbol = formatSinaSymbol(symbol);
+  const url = `${SINA_API_BASE}${sinaSymbol}`;
+
+  console.log(`[sina fetch] ${symbol} -> ${url}`);
+
+  const response = await fetch(url, {
+    headers: {
+      "Referer": "https://finance.sina.com.cn",
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Sina API HTTP ${response.status}`);
+  }
+
+  // 使用 iconv-lite 解码 GBK
+  const buffer = await response.arrayBuffer();
+  const decodedText = iconv.decode(Buffer.from(buffer), "gbk");
+
+  const parsed = parseSinaResponse(decodedText);
+  if (!parsed) {
+    throw new Error("解析失败或股票代码无效");
+  }
+
+  return parsed;
+};
+
+// 新浪股票代理路由（支持 A 股和美股）
+app.get("/sina/:symbol", async (req, res) => {
+  const symbol = normalizeSymbol(req.params.symbol || "");
+  if (!symbol) {
+    return res.status(400).json({ error: "Symbol is required" });
+  }
+
+  try {
+    const data = await fetchSinaStock(symbol);
+    return res.json(data);
+  } catch (err) {
+    console.error(`[sina error] ${symbol}:`, err.message);
+    return respondError(res, 502, "Sina API error", err.message);
+  }
+});
+
+// 新浪批量查询路由
+app.get("/sina-batch", async (req, res) => {
+  const symbolsParam = req.query.symbols || "";
+  const symbols = symbolsParam.split(",").map(s => s.trim().toUpperCase()).filter(Boolean);
+
+  if (symbols.length === 0) {
+    return res.status(400).json({ error: "Symbols are required" });
+  }
+
+  if (symbols.length > 50) {
+    return res.status(400).json({ error: "Too many symbols, max 50" });
+  }
+
+  // 批量请求新浪 API
+  const sinaSymbols = symbols.map(formatSinaSymbol).join(",");
+  const url = `${SINA_API_BASE}${sinaSymbols}`;
+
+  console.log(`[sina batch] ${symbols.length} symbols`);
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        "Referer": "https://finance.sina.com.cn",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Sina API HTTP ${response.status}`);
+    }
+
+    const buffer = await response.arrayBuffer();
+    const decodedText = iconv.decode(Buffer.from(buffer), "gbk");
+
+    // 解析多行结果
+    const lines = decodedText.split("\n").filter(line => line.trim());
+    const results = [];
+
+    for (const line of lines) {
+      const parsed = parseSinaResponse(line);
+      if (parsed) {
+        results.push(parsed);
+      }
+    }
+
+    return res.json({ stocks: results, count: results.length });
+  } catch (err) {
+    console.error("[sina batch error]:", err.message);
+    return respondError(res, 502, "Sina API error", err.message);
   }
 });
 
