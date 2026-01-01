@@ -156,7 +156,28 @@ function updateDebugPanel(report) {
   el.textContent = JSON.stringify(report, null, 2);
 }
 
-function renderStockCards(stocks) {
+/**
+ * 获取股票走势图 URL
+ * A 股：分时图，美股：日 K 线图
+ */
+function getChartUrl(symbol, market) {
+  const sym = (symbol || "").toUpperCase();
+
+  if (market === "SH") {
+    // 上证 A 股分时图
+    return `http://image.sinajs.cn/newchart/min/n/sh${sym}.gif`;
+  } else if (market === "SZ") {
+    // 深证 A 股分时图
+    return `http://image.sinajs.cn/newchart/min/n/sz${sym}.gif`;
+  } else {
+    // 美股日 K 线图
+    return `http://image.sinajs.cn/newchart/usstock/daily/${sym.toLowerCase()}.gif`;
+  }
+}
+
+function renderStockCards(stocks, options = {}) {
+  const { showChart = false } = options; // 默认不显示走势图（自选股列表）
+
   return stocks
     .map((s) => {
       const hasError = Boolean(s.error);
@@ -175,8 +196,19 @@ function renderStockCards(stocks) {
       const isAShare = s.market === "SH" || s.market === "SZ";
       const currencySymbol = isAShare ? "¥" : "$";
 
+      // 走势图 URL
+      const chartUrl = getChartUrl(s.symbol, s.market);
+      const chartLabel = isAShare ? "分时" : "日K";
+
+      // 走势图 HTML（仅在需要时显示）
+      const chartHtml = showChart ? `
+        <div class="stock-chart">
+          <img src="${chartUrl}" alt="${chartLabel}走势图" loading="lazy" onerror="this.style.display='none'" />
+        </div>
+      ` : "";
+
       return `
-        <div class="stock-card">
+        <div class="stock-card" data-action="open-detail" data-symbol="${symbolText}">
           <div class="stock-header">
             <span class="symbol">${symbolText}</span>
             <span class="name">${displayName}</span>
@@ -197,7 +229,7 @@ function renderStockCards(stocks) {
                    <div class="change-row ${changeClass}">
                      <span class="change-chip">${arrow} ${changeValue.toFixed(2)}</span>
                      <span>${percentValue.toFixed(2)}%</span>
-                   </div>`
+                   </div>${chartHtml}`
         }
           </div>
         </div>
@@ -221,7 +253,7 @@ function renderLayout() {
   if (watchlistContainer) {
     const watchlistContent = state.watchlist.length
       ? watchlistQuotes.length
-        ? `<div class="card-grid">${renderStockCards(watchlistQuotes)}</div>`
+        ? `<div class="card-grid">${renderStockCards(watchlistQuotes, { showChart: false })}</div>`
         : `<div class="watchlist-empty"><div class="empty-text">加载中...</div></div>`
       : `<div class="watchlist-empty">
           <div class="empty-title">暂无自选股</div>
@@ -248,7 +280,7 @@ function renderLayout() {
             <h2 class="section-title">搜索结果</h2>
           </div>
           <div class="card-grid single">
-            ${renderStockCards([state.searchResult])}
+            ${renderStockCards([state.searchResult], { showChart: true })}
           </div>
         </section>
       `
@@ -285,6 +317,125 @@ function renderLayout() {
     const statusText = state.ui.message || (state.ui.loading ? "加载中..." : "");
     statusContainer.innerHTML = statusText ? `<div class="status-text">${statusText}</div>` : "";
   }
+}
+
+// ==================== 股票详情弹窗 ====================
+
+/**
+ * 打开股票详情弹窗
+ */
+function openStockDetail(symbol) {
+  const quote = state.quotesBySymbol[symbol] || state.searchResult;
+  if (!quote || quote.symbol !== symbol) {
+    console.warn("[detail] 未找到股票数据:", symbol);
+    return;
+  }
+
+  const modal = document.querySelector("#stock-detail-modal");
+  const content = document.querySelector("#stock-detail-content");
+  if (!modal || !content) return;
+
+  content.innerHTML = renderStockDetail(quote);
+  modal.classList.add("active");
+  document.body.style.overflow = "hidden"; // 防止背景滚动
+}
+
+/**
+ * 关闭股票详情弹窗
+ */
+function closeStockDetail() {
+  const modal = document.querySelector("#stock-detail-modal");
+  if (modal) {
+    modal.classList.remove("active");
+    document.body.style.overflow = "";
+  }
+}
+
+/**
+ * 渲染股票详情内容
+ */
+function renderStockDetail(quote) {
+  const s = quote;
+  const isAShare = s.market === "SH" || s.market === "SZ";
+  const currencySymbol = isAShare ? "¥" : "$";
+  const marketLabel = isAShare ? (s.market === "SH" ? "沪市" : "深市") : "美股";
+  const marketClass = s.market ? s.market.toLowerCase() : "us";
+
+  const up = s.change >= 0;
+  const changeClass = up ? "up" : "down";
+  const arrow = up ? "▲" : "▼";
+
+  const price = Number.isFinite(s.price) ? s.price.toFixed(2) : "--";
+  const change = Number.isFinite(s.change) ? s.change.toFixed(2) : "--";
+  const percent = Number.isFinite(s.percent) ? s.percent.toFixed(2) : "--";
+
+  // 走势图 URL
+  const chartUrl = getChartUrl(s.symbol, s.market);
+  const chartLabel = isAShare ? "分时走势" : "日K线";
+
+  // 收藏状态
+  const starred = isInWatchlist(s.symbol);
+
+  // 额外指标（A 股有更多数据）
+  const open = Number.isFinite(s.open) ? s.open.toFixed(2) : "--";
+  const high = Number.isFinite(s.high) ? s.high.toFixed(2) : "--";
+  const low = Number.isFinite(s.low) ? s.low.toFixed(2) : "--";
+  const prevClose = Number.isFinite(s.prevClose) ? s.prevClose.toFixed(2) : "--";
+  const volume = s.volume ? (s.volume / 10000).toFixed(2) + "万" : "--";
+
+  return `
+    <div class="detail-header">
+      <div class="detail-title">
+        <span class="detail-symbol">${escapeHtml(s.symbol)}</span>
+        <span class="detail-name">${escapeHtml(s.name || s.symbol)}</span>
+      </div>
+      <span class="detail-market-tag ${marketClass}">${marketLabel}</span>
+    </div>
+    
+    <div class="detail-price-section">
+      <div class="detail-price">${currencySymbol}${price}</div>
+      <div class="detail-change ${changeClass}">
+        <span>${arrow} ${change}</span>
+        <span>${percent}%</span>
+      </div>
+    </div>
+    
+    <div class="detail-chart-section">
+      <div class="detail-chart-title">${chartLabel}</div>
+      <div class="detail-chart">
+        <img src="${chartUrl}" alt="${chartLabel}" loading="lazy" onerror="this.parentElement.innerHTML='<div style=\\'text-align:center;padding:40px;color:#9ca3af;\\'>暂无走势图</div>'" />
+      </div>
+    </div>
+    
+    <div class="detail-metrics">
+      <div class="metric-item">
+        <div class="metric-label">开盘</div>
+        <div class="metric-value">${currencySymbol}${open}</div>
+      </div>
+      <div class="metric-item">
+        <div class="metric-label">昨收</div>
+        <div class="metric-value">${currencySymbol}${prevClose}</div>
+      </div>
+      <div class="metric-item">
+        <div class="metric-label">最高</div>
+        <div class="metric-value">${currencySymbol}${high}</div>
+      </div>
+      <div class="metric-item">
+        <div class="metric-label">最低</div>
+        <div class="metric-value">${currencySymbol}${low}</div>
+      </div>
+      <div class="metric-item">
+        <div class="metric-label">成交量</div>
+        <div class="metric-value">${volume}</div>
+      </div>
+    </div>
+    
+    <div class="detail-actions">
+      <button class="detail-star-btn ${starred ? "active" : ""}" data-symbol="${escapeHtml(s.symbol)}" data-name="${escapeHtml(s.name || s.symbol)}">
+        ${starred ? "★ 已收藏" : "☆ 加入自选"}
+      </button>
+    </div>
+  `;
 }
 
 function bindEventsOnce() {
@@ -324,6 +475,16 @@ function bindEventsOnce() {
       const symbol = suggestionItem.dataset.symbol;
       if (symbol) {
         handleSuggestionClick(symbol);
+      }
+      return;
+    }
+
+    // 点击股票卡片打开详情（排除星标按钮）
+    const stockCard = e.target.closest('[data-action="open-detail"]');
+    if (stockCard && !e.target.closest(".star-btn")) {
+      const symbol = stockCard.dataset.symbol;
+      if (symbol) {
+        openStockDetail(symbol);
       }
       return;
     }
@@ -377,6 +538,41 @@ function bindEventsOnce() {
       hideSuggestions();
     }
   });
+
+  // 详情弹窗事件
+  const modal = document.querySelector("#stock-detail-modal");
+  if (modal) {
+    modal.addEventListener("click", (e) => {
+      // 关闭弹窗
+      if (e.target.closest('[data-action="close-modal"]')) {
+        closeStockDetail();
+        return;
+      }
+
+      // 详情页内的收藏按钮
+      const detailStarBtn = e.target.closest(".detail-star-btn");
+      if (detailStarBtn) {
+        const symbol = detailStarBtn.dataset.symbol;
+        const name = detailStarBtn.dataset.name;
+        if (!symbol) return;
+
+        if (isInWatchlist(symbol)) {
+          removeFromWatchlist(symbol);
+        } else {
+          const quote = state.quotesBySymbol[symbol] || state.searchResult;
+          upsertWatchlist(symbol, quote || { symbol, name: name || symbol, price: 0, change: 0, percent: 0 });
+        }
+
+        // 更新弹窗内按钮状态
+        const starred = isInWatchlist(symbol);
+        detailStarBtn.className = `detail-star-btn ${starred ? "active" : ""}`;
+        detailStarBtn.innerHTML = starred ? "★ 已收藏" : "☆ 加入自选";
+
+        // 刷新列表
+        refreshData({ silent: true });
+      }
+    });
+  }
 
   eventsBound = true;
 }

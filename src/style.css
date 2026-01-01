@@ -354,6 +354,23 @@ body {
   color: #dc2626;
 }
 
+/* 股票走势图 */
+.stock-chart {
+  width: 100%;
+  height: 120px;
+  margin-top: 8px;
+  border-radius: 8px;
+  overflow: hidden;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+}
+
+.stock-chart img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #fff;
+}
+
 .status-text {
   text-align: center;
   margin-top: 12px;
@@ -416,4 +433,228 @@ body {
 /* 为底部状态栏留出空间 */
 .page {
   padding-bottom: 60px;
+}
+
+/* ==================== 股票详情模态弹窗 ==================== */
+
+.modal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 200;
+}
+
+.modal.active {
+  display: block;
+}
+
+.modal-backdrop {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(4px);
+}
+
+.modal-content {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: #fff;
+  border-radius: 24px 24px 0 0;
+  padding: 24px;
+  max-height: 85vh;
+  overflow-y: auto;
+  animation: slideUp 0.3s ease;
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+  }
+
+  to {
+    transform: translateY(0);
+  }
+}
+
+.modal-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: #f3f4f6;
+  border-radius: 50%;
+  font-size: 20px;
+  cursor: pointer;
+  color: #6b7280;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.modal-close:hover {
+  background: #e5e7eb;
+}
+
+/* 详情头部 */
+.detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.detail-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.detail-symbol {
+  font-size: 24px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.detail-name {
+  font-size: 14px;
+  color: #6b7280;
+}
+
+.detail-market-tag {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 8px;
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.detail-market-tag.sh,
+.detail-market-tag.sz {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+/* 价格区域 */
+.detail-price-section {
+  text-align: center;
+  padding: 20px 0;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.detail-price {
+  font-size: 40px;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.detail-change {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 8px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.detail-change.up {
+  color: #16a34a;
+}
+
+.detail-change.down {
+  color: #dc2626;
+}
+
+/* 走势图区域 */
+.detail-chart-section {
+  padding: 16px 0;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.detail-chart-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #6b7280;
+  margin-bottom: 12px;
+}
+
+.detail-chart {
+  width: 100%;
+  height: 180px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #f9fafb;
+}
+
+.detail-chart img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* 指标网格 */
+.detail-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  padding: 16px 0;
+}
+
+.metric-item {
+  background: #f9fafb;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+.metric-label {
+  font-size: 12px;
+  color: #6b7280;
+  margin-bottom: 4px;
+}
+
+.metric-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+/* 详情页收藏按钮 */
+.detail-actions {
+  padding-top: 16px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.detail-star-btn {
+  width: 100%;
+  padding: 14px;
+  border: none;
+  border-radius: 12px;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.detail-star-btn.active {
+  background: #fef3c7;
+  color: #d97706;
+}
+
+.detail-star-btn:hover {
+  opacity: 0.9;
 }
