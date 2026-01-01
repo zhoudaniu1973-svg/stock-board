@@ -9,13 +9,37 @@ const STOCK_LIST = [
 ];
 
 const WATCHLIST_KEY = "stock-board:watchlist";
+const QUOTES_CACHE_KEY = "stock-board:quotes-cache"; // 缓存行情数据
 let eventsBound = false;
 let searchDebounceTimer = null;
+
+// 从 localStorage 加载缓存的行情数据
+function loadQuotesCache() {
+  try {
+    const raw = localStorage.getItem(QUOTES_CACHE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return {};
+    return parsed;
+  } catch (err) {
+    console.warn("Failed to load quotes cache", err);
+    return {};
+  }
+}
+
+// 保存行情数据到 localStorage
+function saveQuotesCache() {
+  try {
+    localStorage.setItem(QUOTES_CACHE_KEY, JSON.stringify(state.quotesBySymbol));
+  } catch (err) {
+    console.warn("Failed to save quotes cache", err);
+  }
+}
 
 const state = {
   query: "",
   watchlist: loadWatchlist(), // string[]
-  quotesBySymbol: {}, // Record<symbol, Quote>
+  quotesBySymbol: loadQuotesCache(), // 启动时立即从缓存加载行情数据
   searchResult: null, // Quote | null
   ui: { loading: false, message: null }, // UI status
 };
@@ -317,14 +341,20 @@ function bindEventsOnce() {
 }
 
 async function refreshData(options = {}) {
-  state.ui = { loading: true, message: options.silent ? null : "加载中..." };
-  renderLayout();
+  // 缓存优先策略：如果有缓存数据，不显示加载状态，后台静默刷新
+  const hasCachedData = state.watchlist.some((sym) => state.quotesBySymbol[sym]);
+  const showLoading = !hasCachedData && !options.silent;
+  
+  if (showLoading) {
+    state.ui = { loading: true, message: "加载中..." };
+    renderLayout();
+  }
 
   const updatedQuotes = { ...state.quotesBySymbol };
 
   try {
     const tasks = state.watchlist
-      .filter((sym) => !isAShareSymbol(sym)) // 不请求 A 股
+      .filter((sym) => !isAShareSymbol(sym))
       .map(async (sym) => {
         const meta = findStockMeta(sym);
         const result = await fetchStock(sym);
@@ -344,31 +374,40 @@ async function refreshData(options = {}) {
             percent: result.changePercent,
           };
         } else {
+          // 如果有缓存数据但请求失败，保留缓存数据，只标记为过期
+          if (updatedQuotes[sym] && !updatedQuotes[sym].error) {
+            updatedQuotes[sym] = { ...updatedQuotes[sym], stale: true };
+          } else {
+            updatedQuotes[sym] = {
+              symbol: sym,
+              name: meta.name || sym,
+              price: 0,
+              change: 0,
+              percent: 0,
+              error: (result && result.error) || "获取失败",
+            };
+          }
+        }
+      } else {
+        const sym = entry.reason && entry.reason.sym ? entry.reason.sym : "未知";
+        const meta = findStockMeta(sym);
+        // 如果有缓存数据但请求失败，保留缓存数据
+        if (!updatedQuotes[sym]) {
           updatedQuotes[sym] = {
             symbol: sym,
             name: meta.name || sym,
             price: 0,
             change: 0,
             percent: 0,
-            error: (result && result.error) || "获取失败",
+            error: "获取失败",
           };
         }
-      } else {
-        const sym = entry.reason && entry.reason.sym ? entry.reason.sym : "未知";
-        const meta = findStockMeta(sym);
-        updatedQuotes[sym] = {
-          symbol: sym,
-          name: meta.name || sym,
-          price: 0,
-          change: 0,
-          percent: 0,
-          error: "获取失败",
-        };
       }
     }
   } finally {
     state.quotesBySymbol = updatedQuotes;
     state.ui = { loading: false, message: null };
+    saveQuotesCache(); // 保存最新数据到缓存
     renderLayout();
   }
 }
@@ -444,6 +483,7 @@ async function handleSearch(rawInput) {
   }
 }
 
-// 初始加载
+// 初始加载：先渲染缓存数据，再后台刷新
 bindEventsOnce();
-refreshData({ silent: true });
+renderLayout(); // 立即显示缓存数据
+refreshData({ silent: true }); // 后台静默刷新
