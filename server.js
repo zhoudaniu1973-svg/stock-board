@@ -1,5 +1,5 @@
 require("dotenv").config();
-const FMP_API_KEY = process.env.FMP_API_KEY;
+
 
 const express = require("express");
 const cors = require("cors");
@@ -18,7 +18,7 @@ const CACHE_TTL_MS = parseEnvInt("CACHE_TTL_MS", 60 * 1000); // TTL for cache fr
 const CACHE_CAPACITY = parseEnvInt("CACHE_CAPACITY", 200); // Max symbols to keep before LRU eviction
 const RATE_LIMIT_WINDOW_MS = parseEnvInt("RATE_LIMIT_WINDOW_MS", 10 * 1000); // Time window for upstream rate limit
 const RATE_LIMIT_MAX = parseEnvInt("RATE_LIMIT_MAX", 30); // Max upstream hits per window
-const FMP_QUOTE_URL = "https://financialmodelingprep.com/stable/quote-short"; // Requires env FMP_API_KEY
+
 
 const cache = new Map(); // LRU-ish: we reinsert on hit and evict oldest when exceeding capacity
 const inFlight = new Map(); // In-flight deduplication per symbol (promise reuse)
@@ -70,65 +70,7 @@ const requestSlotAvailable = () => {
   return true;
 };
 
-const validateQuote = (quote) => {
-  const price = Number(quote?.price);
-  const change = Number(quote?.change);
-  if (!Number.isFinite(price)) {
-    const err = new Error("Upstream data missing price");
-    err.httpStatus = 502;
-    throw err;
-  }
-  if (!Number.isFinite(change)) {
-    const err = new Error("Upstream data missing change");
-    err.httpStatus = 502;
-    throw err;
-  }
 
-  const previousClose = price - change;
-  const percent = (change / previousClose) * 100;
-  const t = new Date().toISOString();
-
-  return { price, change, percent, t };
-};
-
-const fetchAndCache = async (symbol) => {
-  console.log(`[upstream fetch] ${symbol}`);
-  const url = new URL(FMP_QUOTE_URL);
-  url.searchParams.set("symbol", symbol);
-  url.searchParams.set("apikey", FMP_API_KEY);
-
-  const res = await fetch(url);
-  const status = res.status;
-  const text = await res.text();
-
-  if (!res.ok) {
-    const err = new Error(`Upstream HTTP ${status}`);
-    err.httpStatus = status;
-    err.detail = text;
-    throw err;
-  }
-
-  let data;
-  try {
-    data = JSON.parse(text || "");
-  } catch (parseErr) {
-    const err = new Error("Failed to parse upstream JSON");
-    err.httpStatus = 502;
-    err.detail = parseErr.message;
-    throw err;
-  }
-
-  if (!Array.isArray(data) || data.length === 0) {
-    const err = new Error("Upstream returned empty array");
-    err.httpStatus = 502;
-    throw err;
-  }
-
-  const { price, change, percent, t } = validateQuote(data[0]);
-  const payload = { symbol, price, change, percent, t };
-  setCache(symbol, payload);
-  return payload;
-};
 
 const respondError = (res, status, message, detail) => {
   return res.status(status).json({
@@ -153,7 +95,7 @@ app.get("/ping", (req, res) => {
   res.json({ ok: true });
 });
 
-// Financial Modeling Prep proxy with cache + in-flight reuse + rate limit
+// Sina Finance proxy with cache + in-flight reuse + rate limit
 app.get("/stock/:symbol", async (req, res) => {
   const symbol = normalizeSymbol(req.params.symbol || "");
   if (!symbol) {
@@ -190,7 +132,21 @@ app.get("/stock/:symbol", async (req, res) => {
     return respondError(res, 429, "Rate limited", "Too many requests, try later");
   }
 
-  const promise = fetchAndCache(symbol).finally(() => inFlight.delete(symbol));
+  // Use Sina API
+  const promise = fetchSinaStock(symbol).then(data => {
+    // Normalize fields for compatibility
+    // Sina API returns: price, change, percent (which is changePercent)
+    // Frontend expects: price, change, percent
+
+    // Ensure percent field exists (it should be in parsed data)
+    if (data.percent === undefined && data.changePercent !== undefined) {
+      data.percent = data.changePercent;
+    }
+
+    // Cache the normalized payload
+    setCache(symbol, data);
+    return data;
+  }).finally(() => inFlight.delete(symbol));
   inFlight.set(symbol, promise);
 
   try {
@@ -248,6 +204,11 @@ const parseSuggestResponse = (rawText) => {
   return suggestions;
 };
 
+// 重定向根路径到 index.html (SPA 支持)
+app.get("/", (req, res) => {
+  res.sendFile(__dirname + "/index.html");
+});
+
 // 股票搜索建议路由
 app.get("/search", async (req, res) => {
   const keyword = (req.query.q || "").trim();
@@ -297,7 +258,12 @@ const SINA_API_BASE = "http://hq.sinajs.cn/list=";
  * 判断股票代码所属市场并转换为新浪格式
  */
 const formatSinaSymbol = (symbol) => {
-  const s = (symbol || "").trim().toUpperCase();
+  let s = (symbol || "").trim().toUpperCase();
+
+  // 移除前导点（例如 .IXIC -> IXIC）
+  if (s.startsWith(".")) {
+    s = s.slice(1);
+  }
 
   // 已带前缀的情况
   if (s.startsWith("SH") && /^SH\d{6}$/.test(s)) return `sh${s.slice(2)}`;
