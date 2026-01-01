@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">stock-board</string>
+    <string name="title_activity_main">stock-board</string>
+    <string name="package_name">com.zhoud.stockboard</string>
+    <string name="custom_url_scheme">com.zhoud.stockboard</string>
+</resources>

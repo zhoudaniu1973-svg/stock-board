@@ -483,7 +483,185 @@ async function handleSearch(rawInput) {
   }
 }
 
+// ==================== 智能自动更新 ====================
+
+// 更新间隔配置（毫秒）
+const REFRESH_INTERVAL = {
+  TRADING: 30 * 1000,      // 开盘时间：30 秒
+  NON_TRADING: 5 * 60 * 1000, // 非开盘时间：5 分钟
+};
+
+// 自动刷新状态
+let autoRefreshTimer = null;
+let currentInterval = null;
+
+/**
+ * 检测 A 股是否在交易时间
+ * 交易时间：周一至周五 9:30-11:30, 13:00-15:00（北京时间）
+ */
+function isAShareTradingTime() {
+  const now = new Date();
+  const day = now.getDay(); // 0=周日, 1-5=周一至周五, 6=周六
+
+  // 周末不交易
+  if (day === 0 || day === 6) return false;
+
+  const hours = now.getHours();
+  const minutes = now.getMinutes();
+  const timeValue = hours * 60 + minutes; // 转换为分钟数便于比较
+
+  // 上午：9:30 - 11:30 (570 - 690 分钟)
+  const morningStart = 9 * 60 + 30;  // 9:30
+  const morningEnd = 11 * 60 + 30;   // 11:30
+
+  // 下午：13:00 - 15:00 (780 - 900 分钟)
+  const afternoonStart = 13 * 60;    // 13:00
+  const afternoonEnd = 15 * 60;      // 15:00
+
+  return (timeValue >= morningStart && timeValue <= morningEnd) ||
+    (timeValue >= afternoonStart && timeValue <= afternoonEnd);
+}
+
+/**
+ * 检测美股是否在交易时间
+ * 交易时间：周一至周五 21:30-04:00（北京时间，跨天）
+ * 夏令时：21:30-04:00，冬令时：22:30-05:00
+ * 这里简化处理，使用 21:30-05:00 覆盖两种情况
+ */
+function isUSStockTradingTime() {
+  const now = new Date();
+  const day = now.getDay();
+  const hours = now.getHours();
+  const minutes = now.getMinutes();
+  const timeValue = hours * 60 + minutes;
+
+  // 美股交易时间跨天，需要特殊处理
+  // 晚间：21:30 - 23:59（周一至周五晚上）
+  // 凌晨：00:00 - 05:00（周二至周六凌晨）
+
+  const eveningStart = 21 * 60 + 30; // 21:30
+  const morningEnd = 5 * 60;         // 05:00
+
+  // 晚间交易（周一至周五 21:30 之后）
+  if (day >= 1 && day <= 5 && timeValue >= eveningStart) {
+    return true;
+  }
+
+  // 凌晨交易（周二至周六 05:00 之前）
+  if (day >= 2 && day <= 6 && timeValue <= morningEnd) {
+    return true;
+  }
+
+  // 周一凌晨不交易（周日晚上没有美股）
+  return false;
+}
+
+/**
+ * 检测是否有市场在交易中
+ */
+function isAnyMarketTrading() {
+  return isAShareTradingTime() || isUSStockTradingTime();
+}
+
+/**
+ * 获取当前应该使用的刷新间隔
+ */
+function getRefreshInterval() {
+  return isAnyMarketTrading() ? REFRESH_INTERVAL.TRADING : REFRESH_INTERVAL.NON_TRADING;
+}
+
+/**
+ * 获取交易状态描述
+ */
+function getTradingStatus() {
+  const aShare = isAShareTradingTime();
+  const usStock = isUSStockTradingTime();
+
+  if (aShare && usStock) return "A 股 & 美股交易中";
+  if (aShare) return "A 股交易中";
+  if (usStock) return "美股交易中";
+  return "休市";
+}
+
+/**
+ * 启动自动刷新
+ */
+function startAutoRefresh() {
+  // 清除旧的定时器
+  if (autoRefreshTimer) {
+    clearInterval(autoRefreshTimer);
+  }
+
+  const interval = getRefreshInterval();
+  currentInterval = interval;
+
+  console.log(`[auto-refresh] ${getTradingStatus()} - 刷新间隔: ${interval / 1000} 秒`);
+
+  autoRefreshTimer = setInterval(() => {
+    // 检查间隔是否需要调整
+    const newInterval = getRefreshInterval();
+    if (newInterval !== currentInterval) {
+      console.log(`[auto-refresh] 交易状态变化，重新调整刷新间隔`);
+      startAutoRefresh(); // 重新启动以调整间隔
+      return;
+    }
+
+    console.log(`[auto-refresh] 触发刷新 - ${getTradingStatus()}`);
+    refreshData({ silent: true });
+  }, interval);
+}
+
+/**
+ * 停止自动刷新
+ */
+function stopAutoRefresh() {
+  if (autoRefreshTimer) {
+    clearInterval(autoRefreshTimer);
+    autoRefreshTimer = null;
+    currentInterval = null;
+    console.log("[auto-refresh] 已停止");
+  }
+}
+
+/**
+ * 更新状态栏显示交易状态
+ */
+function updateTradingStatusDisplay() {
+  const statusEl = document.querySelector("#trading-status");
+  if (statusEl) {
+    const status = getTradingStatus();
+    const interval = getRefreshInterval() / 1000;
+    statusEl.textContent = `${status} | 每 ${interval} 秒更新`;
+    statusEl.className = isAnyMarketTrading() ? "trading-status active" : "trading-status";
+  }
+}
+
+// ==================== 初始化 ====================
+
 // 初始加载：先渲染缓存数据，再后台刷新
 bindEventsOnce();
 renderLayout(); // 立即显示缓存数据
 refreshData({ silent: true }); // 后台静默刷新
+
+// 启动智能自动刷新
+startAutoRefresh();
+
+// 立即显示交易状态
+updateTradingStatusDisplay();
+
+// 每分钟检查一次交易状态变化（用于状态显示）
+setInterval(updateTradingStatusDisplay, 60 * 1000);
+
+// 页面可见性变化时的处理
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    // 页面隐藏时停止自动刷新，节省资源
+    stopAutoRefresh();
+    console.log("[auto-refresh] 页面隐藏，暂停刷新");
+  } else {
+    // 页面恢复时立即刷新并重启自动刷新
+    refreshData({ silent: true });
+    startAutoRefresh();
+    console.log("[auto-refresh] 页面恢复，重启刷新");
+  }
+});
