@@ -56,7 +56,7 @@ body {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin: 4px 0 16px;
+  margin: 16px 0;
 }
 
 .hero-icon {
@@ -75,6 +75,32 @@ body {
   font-size: 26px;
   font-weight: 800;
   color: #111827;
+  flex: 1;
+}
+
+/* 刷新按钮 - 更大更显眼 */
+.refresh-button {
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 12px;
+  background: #f3f4f6;
+  font-size: 24px;
+  cursor: pointer;
+  color: #374151;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.refresh-button:hover {
+  background: #e5e7eb;
+  transform: rotate(45deg);
+}
+
+.refresh-button:active {
+  background: #d1d5db;
 }
 
 .search-section {

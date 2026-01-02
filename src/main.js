@@ -165,13 +165,13 @@ function getChartUrl(symbol, market) {
 
   if (market === "SH") {
     // 上证 A 股分时图
-    return `http://image.sinajs.cn/newchart/min/n/sh${sym}.gif`;
+    return `https://image.sinajs.cn/newchart/min/n/sh${sym}.gif`;
   } else if (market === "SZ") {
     // 深证 A 股分时图
-    return `http://image.sinajs.cn/newchart/min/n/sz${sym}.gif`;
+    return `https://image.sinajs.cn/newchart/min/n/sz${sym}.gif`;
   } else {
     // 美股日 K 线图
-    return `http://image.sinajs.cn/newchart/usstock/daily/${sym.toLowerCase()}.gif`;
+    return `https://image.sinajs.cn/newchart/usstock/daily/${sym.toLowerCase()}.gif`;
   }
 }
 
