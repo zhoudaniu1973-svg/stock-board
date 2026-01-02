@@ -1,5 +1,6 @@
 import "./style.css";
 import { fetchStock } from "./stock-card.js";
+import { App } from "@capacitor/app";
 
 const STOCK_LIST = [
   { symbol: "AAPL", name: "Apple Inc." },
@@ -338,16 +339,27 @@ function openStockDetail(symbol) {
   content.innerHTML = renderStockDetail(quote);
   modal.classList.add("active");
   document.body.style.overflow = "hidden"; // 防止背景滚动
+
+  // 浏览器 History API 支持：添加历史记录，返回键可关闭弹窗
+  if (!window.Capacitor) {
+    history.pushState({ modal: "stock-detail" }, "");
+  }
 }
 
 /**
  * 关闭股票详情弹窗
+ * @param {boolean} fromPopState - 是否来自 popstate 事件，避免重复操作 history
  */
-function closeStockDetail() {
+function closeStockDetail(fromPopState = false) {
   const modal = document.querySelector("#stock-detail-modal");
-  if (modal) {
+  if (modal && modal.classList.contains("active")) {
     modal.classList.remove("active");
     document.body.style.overflow = "";
+
+    // 如果不是来自 popstate，需要回退历史（用户点击关闭按钮的情况）
+    if (!fromPopState && !window.Capacitor && history.state?.modal === "stock-detail") {
+      history.back();
+    }
   }
 }
 
@@ -998,3 +1010,49 @@ document.addEventListener("visibilitychange", () => {
     console.log("[auto-refresh] 页面恢复，重启刷新");
   }
 });
+
+// ==================== Android 返回键处理 ====================
+
+/**
+ * 处理 Android 返回键事件
+ * 优先级：弹窗打开时关闭弹窗 > 退出应用
+ */
+App.addListener("backButton", ({ canGoBack }) => {
+  console.log("[back-button] 返回键触发, canGoBack:", canGoBack);
+
+  // 1. 检查是否有打开的弹窗
+  const modal = document.querySelector(".modal.active");
+  if (modal) {
+    // 关闭弹窗
+    closeStockDetail();
+    console.log("[back-button] 关闭弹窗");
+    return;
+  }
+
+  // 2. 检查是否有搜索建议
+  const suggestions = document.querySelector("#search-suggestions.active");
+  if (suggestions) {
+    hideSuggestions();
+    console.log("[back-button] 关闭搜索建议");
+    return;
+  }
+
+  // 3. 没有弹窗，直接退出应用
+  App.exitApp();
+});
+
+// ==================== 浏览器返回键处理 (History API) ====================
+
+/**
+ * 处理浏览器返回键事件（popstate）
+ * 仅在非 Capacitor 环境下生效，用于浏览器中按返回键关闭弹窗
+ */
+window.addEventListener("popstate", (event) => {
+  // 如果之前是弹窗状态，现在返回了，则关闭弹窗
+  const modal = document.querySelector(".modal.active");
+  if (modal) {
+    closeStockDetail(true); // 传入 true 表示来自 popstate，避免重复 history.back()
+    console.log("[popstate] 浏览器返回键关闭弹窗");
+  }
+});
+
