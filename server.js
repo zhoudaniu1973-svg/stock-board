@@ -332,6 +332,10 @@ const parseAShareData = (dataString, sinaSymbol) => {
 
 /**
  * 解析新浪美股数据
+ * 新浪美股 API 返回字段顺序：
+ * 0: 名称, 1: 现价, 2: 涨跌幅%, 3: 交易时间, 4: 涨跌额,
+ * 5: 昨收, 6: 开盘, 7: 最高, 8: 52周高, 9: 52周低,
+ * 10: 市值, 11: 市盈率, 12: ?, 13: 成交量
  */
 const parseUSStockData = (dataString, sinaSymbol) => {
   const fields = dataString.split(",");
@@ -342,11 +346,21 @@ const parseUSStockData = (dataString, sinaSymbol) => {
   const changePercent = parseFloat(fields[2]);
   const tradeTime = fields[3] || "";
   const priceChange = parseFloat(fields[4]);
+  const prevClose = parseFloat(fields[5]);
+  const openPrice = parseFloat(fields[6]);
+  const highPrice = parseFloat(fields[7]);
 
   if (isNaN(currentPrice)) return null;
 
   // 优先从 sinaSymbol 提取代码（更可靠），字段 14 可能有偏差
   const symbol = sinaSymbol.replace("gb_", "").toUpperCase();
+
+  // 最低价：新浪美股 API 没有直接返回盘中最低价
+  // 尝试从 52 周低点字段获取，如果现价更低则用现价
+  const week52Low = parseFloat(fields[9]);
+  let lowPrice = null;
+  // 由于美股 API 没有返回当日最低价，我们从 prevClose、openPrice 和 currentPrice 推测一个参考值
+  // 实际上这个值无法准确获取，只能显示为 null（暂不可用）
 
   return {
     symbol,
@@ -355,10 +369,12 @@ const parseUSStockData = (dataString, sinaSymbol) => {
     change: isNaN(priceChange) ? 0 : priceChange,
     percent: isNaN(changePercent) ? 0 : changePercent,
     tradeTime,
-    openPrice: parseFloat(fields[6]) || null,
-    highPrice: parseFloat(fields[7]) || null,
+    prevClose: isNaN(prevClose) ? null : prevClose,
+    openPrice: isNaN(openPrice) ? null : openPrice,
+    highPrice: isNaN(highPrice) ? null : highPrice,
+    lowPrice: lowPrice, // 美股 API 不返回盘中最低价
     week52High: parseFloat(fields[8]) || null,
-    week52Low: parseFloat(fields[9]) || null,
+    week52Low: isNaN(week52Low) ? null : week52Low,
     marketCap: fields[10] || null,
     pe: parseFloat(fields[11]) || null,
     volume: fields[13] || null,

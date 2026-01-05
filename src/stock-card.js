@@ -71,6 +71,12 @@ async function fetchFromSina(symbol) {
       changePercent: percent,
       market: data.market, // SH / SZ / US
       tradeTime: data.tradeTime,
+      // 详情页需要的额外字段
+      openPrice: data.openPrice,
+      highPrice: data.highPrice,
+      lowPrice: data.lowPrice,
+      volume: data.volume,
+      amount: data.amount,
       source: "sina",
     };
   } catch (e) {
